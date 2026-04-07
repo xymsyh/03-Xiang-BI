@@ -127,12 +127,15 @@ _province_h = f"{max(500, len(province_rank_data) * 32 + 80)}px"
 chart_province_bar = (
     Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_province_h))
     .add_xaxis(province_rank_data["省份"].tolist()[::-1])
-    .add_yaxis("总销售额", province_rank_data["商品销售额"].tolist()[::-1])
+    .add_yaxis("总销售额", province_rank_data["商品销售额"].tolist()[::-1],
+               label_opts=opts.LabelOpts(position="right"))
+    .add_yaxis("总库存", province_rank_data["总库存"].tolist()[::-1],
+               label_opts=opts.LabelOpts(position="right"))
     .reversal_axis()
-    .set_series_opts(label_opts=opts.LabelOpts(position="right"))
     .set_global_opts(
         title_opts=opts.TitleOpts(title="省份销售额排行榜（全部）"),
-        xaxis_opts=opts.AxisOpts(name="金额"),
+        xaxis_opts=opts.AxisOpts(name="金额 / 库存"),
+        legend_opts=opts.LegendOpts(pos_top="5%"),
         tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
             "function(ps){var p=ps[0],d=PROVINCE_DATA[p.name]||{};"
             "return p.name+'<br/>销售额: ¥'+p.value+' 元'"
@@ -174,12 +177,15 @@ _city_h = f"{max(500, len(city_rank_data) * 32 + 80)}px"
 chart_city_bar = (
     Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_city_h))
     .add_xaxis(city_rank_data["城市_轴标"].tolist()[::-1])
-    .add_yaxis("总销售额", city_rank_data["商品销售额"].tolist()[::-1])
+    .add_yaxis("总销售额", city_rank_data["商品销售额"].tolist()[::-1],
+               label_opts=opts.LabelOpts(position="right"))
+    .add_yaxis("总库存", city_rank_data["总库存"].tolist()[::-1],
+               label_opts=opts.LabelOpts(position="right"))
     .reversal_axis()
-    .set_series_opts(label_opts=opts.LabelOpts(position="right"))
     .set_global_opts(
         title_opts=opts.TitleOpts(title="城市销售额排行榜（全部）"),
-        xaxis_opts=opts.AxisOpts(name="金额"),
+        xaxis_opts=opts.AxisOpts(name="金额 / 库存"),
+        legend_opts=opts.LegendOpts(pos_top="5%"),
         tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
             "function(ps){"
             "var p=ps[0];"
