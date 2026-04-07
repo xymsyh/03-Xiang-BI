@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import pandas as pd; df = pd.read_excel\\('01 商品明细_2026-04-07.xlsx', nrows=2\\); print\\(list\\(df.columns\\)\\)\")",
+      "Bash(python -c ':*)"
+    ]
+  }
+}
