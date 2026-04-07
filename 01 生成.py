@@ -70,7 +70,7 @@ except Exception as e:
 # 省份
 province_map_data  = [[to_echarts_province(p), float(v)]
                       for p, v in zip(df_province["省份"], df_province["商品销售额"])]
-province_rank_data = df_province.head(15)
+province_rank_data = df_province
 
 # Tooltip 查找表（注入 JS 用）
 def _row_dict(row):
@@ -103,7 +103,7 @@ else:
 # 城市（排除"全国"）
 city_only      = df_city[df_city["城市_清洗"] != "全国"].sort_values("商品销售额", ascending=False)
 city_map_data  = [list(z) for z in zip(city_only["城市_清洗"], city_only["商品销售额"])]
-city_rank_data = city_only.head(15)
+city_rank_data = city_only
 
 # ── 图表：省份地图 ────────────────────────────────────────
 chart_province_map = (
@@ -123,17 +123,18 @@ chart_province_map = (
 )
 
 # ── 图表：省份排行榜 ──────────────────────────────────────
+_province_h = f"{max(500, len(province_rank_data) * 32 + 80)}px"
 chart_province_bar = (
-    Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height="500px"))
+    Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_province_h))
     .add_xaxis(province_rank_data["省份"].tolist()[::-1])
     .add_yaxis("总销售额", province_rank_data["商品销售额"].tolist()[::-1])
     .reversal_axis()
     .set_series_opts(label_opts=opts.LabelOpts(position="right"))
     .set_global_opts(
-        title_opts=opts.TitleOpts(title="省份销售额排行榜 (Top 15)"),
+        title_opts=opts.TitleOpts(title="省份销售额排行榜（全部）"),
         xaxis_opts=opts.AxisOpts(name="金额"),
-        tooltip_opts=opts.TooltipOpts(formatter=JsCode(
-            "function(p){var d=PROVINCE_DATA[p.name]||{};"
+        tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
+            "function(ps){var p=ps[0],d=PROVINCE_DATA[p.name]||{};"
             "return p.name+'<br/>销售额: ¥'+p.value+' 元'"
             "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
             "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
@@ -162,17 +163,18 @@ chart_city_map = (
 )
 
 # ── 图表：城市排行榜 ──────────────────────────────────────
+_city_h = f"{max(500, len(city_rank_data) * 32 + 80)}px"
 chart_city_bar = (
-    Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height="500px"))
+    Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_city_h))
     .add_xaxis(city_rank_data["城市_清洗"].tolist()[::-1])
     .add_yaxis("总销售额", city_rank_data["商品销售额"].tolist()[::-1])
     .reversal_axis()
     .set_series_opts(label_opts=opts.LabelOpts(position="right"))
     .set_global_opts(
-        title_opts=opts.TitleOpts(title="城市销售额排行榜 (Top 15)"),
+        title_opts=opts.TitleOpts(title="城市销售额排行榜（全部）"),
         xaxis_opts=opts.AxisOpts(name="金额"),
-        tooltip_opts=opts.TooltipOpts(formatter=JsCode(
-            "function(p){var d=CITY_DATA[p.name]||{};"
+        tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
+            "function(ps){var p=ps[0],d=CITY_DATA[p.name]||{};"
             "return p.name+'<br/>销售额: ¥'+p.value+' 元'"
             "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
             "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
