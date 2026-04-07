@@ -2,10 +2,11 @@ import pandas as pd
 from pyecharts import options as opts
 from pyecharts.charts import Geo, Bar, Page
 from pyecharts.globals import ThemeType
+from pyecharts.commons.utils import JsCode
 import re
 
 # 1. 设置文件路径
-file_path = r"D:\2026\03 小象BI\01 商品明细_2026-04-07 (2).xlsx"
+file_path = r"D:\2026\03 小象BI\01 商品明细_2026-04-07.xlsx"
 
 # 2. 读取并清洗数据
 try:
@@ -48,7 +49,9 @@ geo = (
     .set_global_opts(
         title_opts=opts.TitleOpts(title="全国城市销售分布图（已聚合求和）"),
         visualmap_opts=opts.VisualMapOpts(max_=city_only['商品销售额'].max(), is_piecewise=False),
-        tooltip_opts=opts.TooltipOpts(formatter="{b}: {c} 元") # {c} 现在代表唯一的求和值
+        tooltip_opts=opts.TooltipOpts(
+            formatter=JsCode("function(params){return params.name + ': ' + params.value[2] + ' 元';}")
+        )
     )
 )
 
