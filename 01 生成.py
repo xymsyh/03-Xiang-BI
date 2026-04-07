@@ -163,10 +163,17 @@ chart_city_map = (
 )
 
 # ── 图表：城市排行榜 ──────────────────────────────────────
+# 轴标签：（省份）城市，无省份映射则保留原名
+city_rank_data = city_rank_data.copy()
+city_rank_data["城市_轴标"] = city_rank_data.apply(
+    lambda r: f"（{r['省份']}）{r['城市_清洗']}" if pd.notna(r.get("省份")) else r["城市_清洗"],
+    axis=1,
+)
+
 _city_h = f"{max(500, len(city_rank_data) * 32 + 80)}px"
 chart_city_bar = (
     Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_city_h))
-    .add_xaxis(city_rank_data["城市_清洗"].tolist()[::-1])
+    .add_xaxis(city_rank_data["城市_轴标"].tolist()[::-1])
     .add_yaxis("总销售额", city_rank_data["商品销售额"].tolist()[::-1])
     .reversal_axis()
     .set_series_opts(label_opts=opts.LabelOpts(position="right"))
@@ -174,8 +181,13 @@ chart_city_bar = (
         title_opts=opts.TitleOpts(title="城市销售额排行榜（全部）"),
         xaxis_opts=opts.AxisOpts(name="金额"),
         tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
-            "function(ps){var p=ps[0],d=CITY_DATA[p.name]||{};"
-            "return p.name+'<br/>销售额: ¥'+p.value+' 元'"
+            "function(ps){"
+            "var p=ps[0];"
+            "var m=p.name.match(/^（(.+)）(.+)$/);"
+            "var city=m?m[2]:p.name,prov=m?m[1]:'';"
+            "var label=m?city+'（'+prov+'）':city;"
+            "var d=CITY_DATA[city]||{};"
+            "return label+'<br/>销售额: ¥'+p.value+' 元'"
             "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
             "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
             "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-');}"
