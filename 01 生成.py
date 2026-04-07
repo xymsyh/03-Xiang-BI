@@ -88,8 +88,17 @@ for _, row in df_province.iterrows():
 city_tooltip_dict     = {row["城市_清洗"]: _row_dict(row) for _, row in df_city.iterrows()}
 
 # 全国总计单独提取
-national_row   = df_city[df_city["城市_清洗"] == "全国"]
-national_total = float(national_row["商品销售额"].sum()) if not national_row.empty else float(df_city["商品销售额"].sum())
+national_row    = df_city[df_city["城市_清洗"] == "全国"]
+if not national_row.empty:
+    national_total  = float(national_row["商品销售额"].iloc[0])
+    national_qty    = int(national_row["商品销售量"].iloc[0])
+    national_stock  = int(national_row["总库存"].iloc[0])
+    national_price  = round(national_total / national_qty, 2) if national_qty else None
+else:
+    national_total  = float(city_only["商品销售额"].sum())
+    national_qty    = int(city_only["商品销售量"].sum())
+    national_stock  = int(city_only["总库存"].sum())
+    national_price  = round(national_total / national_qty, 2) if national_qty else None
 
 # 城市（排除"全国"）
 city_only      = df_city[df_city["城市_清洗"] != "全国"].sort_values("商品销售额", ascending=False)
@@ -178,15 +187,30 @@ page.add(chart_province_map, chart_province_bar, chart_city_map, chart_city_bar)
 page.render(output_file)
 
 # ── 注入全国总计 KPI 卡片 ─────────────────────────────────
+_price_str = f"¥ {national_price:,.2f}" if national_price else "-"
 kpi_html = f"""
-<div style="font-family:'Microsoft YaHei',sans-serif;background:#f0f4ff;padding:20px 0 10px;border-bottom:2px solid #d0d8f0;margin-bottom:4px;">
-  <div style="max-width:360px;margin:0 auto;background:#fff;border-radius:14px;padding:22px 32px;
-              box-shadow:0 2px 14px rgba(44,123,229,0.13);text-align:center;">
-    <div style="color:#888;font-size:13px;letter-spacing:2px;margin-bottom:6px;">全国总销售额</div>
-    <div style="color:#2c7be5;font-size:38px;font-weight:bold;letter-spacing:1px;">
-      ¥ {national_total:,.2f}
+<div style="font-family:'Microsoft YaHei',sans-serif;background:#f0f4ff;padding:18px 24px 14px;border-bottom:2px solid #d0d8f0;margin-bottom:4px;">
+  <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap;">
+    <div style="background:#fff;border-radius:12px;padding:16px 28px;box-shadow:0 2px 12px rgba(44,123,229,0.11);text-align:center;min-width:160px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">全国总销售额</div>
+      <div style="color:#2c7be5;font-size:28px;font-weight:bold;">¥ {national_total:,.2f}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">元</div>
     </div>
-    <div style="color:#aaa;font-size:12px;margin-top:4px;">元</div>
+    <div style="background:#fff;border-radius:12px;padding:16px 28px;box-shadow:0 2px 12px rgba(44,123,229,0.11);text-align:center;min-width:160px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">全国总销售量</div>
+      <div style="color:#27ae60;font-size:28px;font-weight:bold;">{national_qty:,}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">件</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:16px 28px;box-shadow:0 2px 12px rgba(44,123,229,0.11);text-align:center;min-width:160px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">全国总库存</div>
+      <div style="color:#e67e22;font-size:28px;font-weight:bold;">{national_stock:,}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">件</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:16px 28px;box-shadow:0 2px 12px rgba(44,123,229,0.11);text-align:center;min-width:160px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">全国平均单价</div>
+      <div style="color:#8e44ad;font-size:28px;font-weight:bold;">{_price_str}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">元/件</div>
+    </div>
   </div>
 </div>
 """
