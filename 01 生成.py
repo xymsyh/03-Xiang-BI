@@ -240,14 +240,18 @@ def process_file(file_path, output_file):
         f.write(html)
 
 
-# ── 批量处理 01 生成 目录 ─────────────────────────────────
-xlsx_files = glob.glob(os.path.join(INPUT_DIR, "*.xlsx"))
+# ── 批量处理 01 生成\02 表 目录 ──────────────────────────────
+TABLE_DIR  = os.path.join(INPUT_DIR, "02 表")
+OUTPUT_DIR = os.path.join(INPUT_DIR, "01 BI")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+xlsx_files = glob.glob(os.path.join(TABLE_DIR, "*.xlsx"))
 if not xlsx_files:
-    print(f"未找到任何 xlsx 文件：{INPUT_DIR}")
+    print(f"未找到任何 xlsx 文件：{TABLE_DIR}")
 else:
     for fp in xlsx_files:
         basename = os.path.splitext(os.path.basename(fp))[0]
-        out = os.path.join(INPUT_DIR, basename + ".html")
+        out = os.path.join(OUTPUT_DIR, basename + ".html")
         try:
             process_file(fp, out)
             print(f"已生成：{out}")
