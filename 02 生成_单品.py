@@ -319,7 +319,10 @@ def process_file(file_path, output_dir):
         qty_fmt = format_number(total_qty)
         stock_fmt = format_number(total_stock)
         price_fmt = f"{unit_price:.2f}".rstrip('0').rstrip('.')
-        filename = f"{idx:02d}【{sales_fmt}  {qty_fmt}  {stock_fmt}  {price_fmt}】{safe_product_name}.html"
+        est_60 = total_qty * ESTIMATED_60DAY_MULTIPLIER
+        turnover = round(total_stock / est_60, 2) if est_60 else 0
+        turnover_fmt = f"{turnover:.2f}".rstrip('0').rstrip('.')
+        filename = f"{idx:02d}【{sales_fmt}  {qty_fmt}  {stock_fmt}  {price_fmt}  {turnover_fmt}】{safe_product_name}.html"
         output_file = os.path.join(output_product_dir, filename)
 
         # ── 渲染输出 ──────────────────────────────────────────────
