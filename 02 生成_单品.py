@@ -471,6 +471,33 @@ def process_file(file_path, output_dir):
 
         print(f"已生成：{output_file}")
 
+        # ── 为汇总（编号 00）生成同名表格文件 ────────────────────
+        if idx == 0:
+            xlsx_output = output_file.replace(".html", ".xlsx")
+            product_rows = []
+            for pg in product_groups[1:]:
+                _pg_qty = pg["qty"]
+                _pg_est60 = _pg_qty * ESTIMATED_60DAY_MULTIPLIER
+                _pg_turnover = round(pg["stock"] / _pg_est60, 2) if _pg_est60 else None
+                product_rows.append({
+                    "商品名称": pg["name"],
+                    "销售额": pg["sales"],
+                    "销售量": _pg_qty,
+                    "预估60天销量": _pg_est60,
+                    "总库存": pg["stock"],
+                    "单价": pg["price"],
+                    "周转周期": _pg_turnover,
+                })
+            df_product_summary = pd.DataFrame(product_rows)
+            df_province_out = df_province[["省份", "商品销售额", "商品销售量", "预估60天销量", "总库存", "单价", "周转周期"]].copy()
+            df_city_out = city_only[["城市_清洗", "省份", "商品销售额", "商品销售量", "预估60天销量", "总库存", "单价", "周转周期"]].copy()
+            df_city_out.rename(columns={"城市_清洗": "城市"}, inplace=True)
+            with pd.ExcelWriter(xlsx_output, engine="openpyxl") as writer:
+                df_product_summary.to_excel(writer, sheet_name="商品汇总", index=False)
+                df_province_out.to_excel(writer, sheet_name="省份汇总", index=False)
+                df_city_out.to_excel(writer, sheet_name="城市汇总", index=False)
+            print(f"已生成：{xlsx_output}")
+
 
 # ── 批量处理 02 生成\02 表 目录 ──────────────────────────
 TABLE_DIR  = os.path.join(INPUT_DIR, "02 表")
