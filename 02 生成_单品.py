@@ -48,8 +48,34 @@ def process_file(file_path, output_dir):
     )
     df["城市_清洗"]  = df["城市"].astype(str).apply(lambda x: re.sub(r"（.*?）", "", x))
 
-    # ── 按商品名称分组 ────────────────────────────────────
+    # ── 按商品名称分组并按销售额排序 ────────────────────────
+    product_groups = []
     for product_name, df_product in df.groupby("商品名称"):
+        # 计算汇总数据用于排序
+        total_sales = float(df_product["商品销售额"].sum())
+        total_qty = int(df_product["商品销售量"].sum())
+        total_stock = int(df_product["总库存"].sum())
+        unit_price = round(total_sales / total_qty, 2) if total_qty else 0
+        product_groups.append({
+            "name": product_name,
+            "df": df_product,
+            "sales": total_sales,
+            "qty": total_qty,
+            "stock": total_stock,
+            "price": unit_price
+        })
+
+    # 按销售额降序排序
+    product_groups.sort(key=lambda x: x["sales"], reverse=True)
+
+    # ── 按商品名称分组 ────────────────────────────────────
+    for idx, product_info in enumerate(product_groups, 1):
+        product_name = product_info["name"]
+        df_product = product_info["df"]
+        total_sales = product_info["sales"]
+        total_qty = product_info["qty"]
+        total_stock = product_info["stock"]
+        unit_price = product_info["price"]
         # 城市级聚合
         df_city = (
             df_product.groupby("城市_清洗")
@@ -209,7 +235,9 @@ def process_file(file_path, output_dir):
         os.makedirs(output_product_dir, exist_ok=True)
 
         safe_product_name = re.sub(r'[<>:"/\\|?*]', '', product_name)
-        output_file = os.path.join(output_product_dir, f"{safe_product_name}.html")
+        sales_int = int(total_sales)
+        filename = f"{idx:02d}【{sales_int}元{total_qty}件{total_stock}库{unit_price:.2f}单】{safe_product_name}.html"
+        output_file = os.path.join(output_product_dir, filename)
 
         # ── 渲染输出 ──────────────────────────────────────────────
         page = Page(layout=Page.SimplePageLayout)
