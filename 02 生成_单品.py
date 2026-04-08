@@ -334,6 +334,9 @@ def process_file(file_path, output_dir):
 
         # ── 注入全国总计 KPI 卡片 ─────────────────────────────────
         _price_str = f"¥ {national_price:,.2f}" if national_price else "-"
+        _national_est60 = national_qty * ESTIMATED_60DAY_MULTIPLIER
+        _national_turnover = round(national_stock / _national_est60, 2) if _national_est60 else None
+        _turnover_str = f"{_national_turnover:.2f}".rstrip('0').rstrip('.') if _national_turnover is not None else "-"
         kpi_html = f"""
 <div style="font-family:'Microsoft YaHei',sans-serif;background:#f0f4ff;padding:18px 24px 14px;border-bottom:2px solid #d0d8f0;margin-bottom:4px;">
   <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap;">
@@ -356,6 +359,11 @@ def process_file(file_path, output_dir):
       <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">全国平均单价</div>
       <div style="color:#8e44ad;font-size:28px;font-weight:bold;">{_price_str}</div>
       <div style="color:#bbb;font-size:11px;margin-top:3px;">元/件</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:16px 28px;box-shadow:0 2px 12px rgba(44,123,229,0.11);text-align:center;min-width:160px;cursor:help;" title="周转周期 = 总库存 ÷ 预估60天销量&#10;预估60天销量 = 销量 × {ESTIMATED_60DAY_MULTIPLIER}&#10;&#10;数值越小说明库存周转越快，越大说明库存积压越多">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">全国周转周期</div>
+      <div style="color:#e74c3c;font-size:28px;font-weight:bold;">{_turnover_str}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">次</div>
     </div>
   </div>
 </div>
