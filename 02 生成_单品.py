@@ -323,8 +323,33 @@ def process_file(file_path, output_dir):
 
         with open(output_file, "r", encoding="utf-8") as f:
             html = f.read()
+        # "全部不选" 按钮脚本 —— 为排行榜柱状图添加快捷按钮
+        deselect_btn_js = """<script>
+(function(){
+    var allDivs=document.querySelectorAll('div[id]'),charts=[];
+    allDivs.forEach(function(div){
+        try{var inst=echarts.getInstanceByDom(div);if(inst)charts.push({div:div,inst:inst});}catch(e){}
+    });
+    var names=['总销售额','销售量','预估60天销量','总库存','周转周期(次)'];
+    [1,3].forEach(function(idx){
+        if(idx>=charts.length)return;
+        var c=charts[idx];
+        var btn=document.createElement('button');
+        btn.textContent='全部不选';
+        btn.style.cssText='margin:8px 0 4px 20px;padding:6px 18px;font-size:13px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-family:Microsoft YaHei,sans-serif;';
+        btn.onmouseover=function(){btn.style.background='#f0f0f0';};
+        btn.onmouseout=function(){btn.style.background='#fff';};
+        btn.onclick=function(){
+            names.forEach(function(n){c.inst.dispatchAction({type:'legendUnSelect',name:n});});
+        };
+        c.div.parentNode.insertBefore(btn,c.div);
+    });
+})();
+</script>"""
+
         html = html.replace("</head>", js_data + "\n</head>", 1)
         html = re.sub(r"(<body[^>]*>)", r"\1\n" + kpi_html, html, count=1)
+        html = html.replace("</body>", deselect_btn_js + "\n</body>", 1)
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(html)
 
