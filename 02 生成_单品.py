@@ -193,7 +193,8 @@ def process_file(file_path, output_dir):
             .set_global_opts(
                 title_opts=opts.TitleOpts(title="省份销售额排行榜（全部）"),
                 xaxis_opts=opts.AxisOpts(name="金额 / 库存"),
-                legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center"),
+                legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
+                    selected_map={"总销售额": True, "销售量": False, "预估60天销量": False, "总库存": True, "周转周期(次)": False}),
                 tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
                     "function(ps){var p=ps[0],d=PROVINCE_DATA[p.name]||{};"
                     "return p.name+'<br/>销售额: ¥'+p.value+' 元'"
@@ -249,7 +250,8 @@ def process_file(file_path, output_dir):
             .set_global_opts(
                 title_opts=opts.TitleOpts(title="城市销售额排行榜（全部）"),
                 xaxis_opts=opts.AxisOpts(name="金额 / 库存"),
-                legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center"),
+                legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
+                    selected_map={"总销售额": True, "销售量": False, "预估60天销量": False, "总库存": True, "周转周期(次)": False}),
                 tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
                     "function(ps){"
                     "var p=ps[0];"
