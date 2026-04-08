@@ -84,8 +84,21 @@ def process_file(file_path, output_dir):
     # 按销售额降序排序
     product_groups.sort(key=lambda x: x["sales"], reverse=True)
 
+    # ── 插入全部商品汇总（编号 00）────────────────────────
+    _all_sales = float(df["商品销售额"].sum())
+    _all_qty   = int(df["商品销售量"].sum())
+    _all_stock = int(df["总库存"].sum())
+    product_groups.insert(0, {
+        "name": "全部商品汇总",
+        "df": df,
+        "sales": _all_sales,
+        "qty": _all_qty,
+        "stock": _all_stock,
+        "price": round(_all_sales / _all_qty, 2) if _all_qty else 0
+    })
+
     # ── 按商品名称分组 ────────────────────────────────────
-    for idx, product_info in enumerate(product_groups, 1):
+    for idx, product_info in enumerate(product_groups):
         product_name = product_info["name"]
         df_product = product_info["df"]
         total_sales = product_info["sales"]
