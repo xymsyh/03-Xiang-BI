@@ -323,33 +323,105 @@ def process_file(file_path, output_dir):
 
         with open(output_file, "r", encoding="utf-8") as f:
             html = f.read()
-        # "全部不选" 按钮脚本 —— 为排行榜柱状图添加快捷按钮
-        deselect_btn_js = """<script>
+        # 工具按钮脚本 —— 为排行榜柱状图添加"全部不选"和"重置排名"按钮
+        toolbar_js = """<script>
 (function(){
     var allDivs=document.querySelectorAll('div[id]'),charts=[];
     allDivs.forEach(function(div){
         try{var inst=echarts.getInstanceByDom(div);if(inst)charts.push({div:div,inst:inst});}catch(e){}
     });
     var names=['总销售额','销售量','预估60天销量','总库存','周转周期(次)'];
+    var btnCss='padding:6px 18px;font-size:13px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-family:Microsoft YaHei,sans-serif;';
+
+    function resetRank(chart){
+        var opt=chart.getOption();
+        var selected=opt.legend[0].selected||{};
+        var cats=opt.yAxis[0].data;
+        var slist=opt.series;
+        var arr=cats.map(function(_,i){
+            var sum=0;
+            slist.forEach(function(s){
+                if(selected[s.name]!==false){
+                    var v=s.data[i];
+                    if(typeof v==='number') sum+=v;
+                    else if(v&&typeof v.value==='number') sum+=v.value;
+                }
+            });
+            return {i:i,s:sum};
+        });
+        arr.sort(function(a,b){return a.s-b.s;});
+        chart.setOption({
+            yAxis:[{data:arr.map(function(x){return cats[x.i];})}],
+            series:slist.map(function(s){
+                return {data:arr.map(function(x){return s.data[x.i];})};
+            })
+        });
+    }
+
     [1,3].forEach(function(idx){
         if(idx>=charts.length)return;
         var c=charts[idx];
-        var btn=document.createElement('button');
-        btn.textContent='全部不选';
-        btn.style.cssText='margin:8px 0 4px 20px;padding:6px 18px;font-size:13px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-family:Microsoft YaHei,sans-serif;';
-        btn.onmouseover=function(){btn.style.background='#f0f0f0';};
-        btn.onmouseout=function(){btn.style.background='#fff';};
-        btn.onclick=function(){
+        var singleMode=false;
+
+        var wrap=document.createElement('div');
+        wrap.style.cssText='margin:8px 0 4px 20px;display:flex;gap:10px;align-items:center;';
+
+        var btn1=document.createElement('button');
+        btn1.textContent='全部不选';
+        btn1.style.cssText=btnCss;
+        btn1.onmouseover=function(){btn1.style.background='#f0f0f0';};
+        btn1.onmouseout=function(){btn1.style.background='#fff';};
+        btn1.onclick=function(){
             names.forEach(function(n){c.inst.dispatchAction({type:'legendUnSelect',name:n});});
         };
-        c.div.parentNode.insertBefore(btn,c.div);
+
+        var btn2=document.createElement('button');
+        btn2.textContent='重置排名';
+        btn2.style.cssText=btnCss+'border-color:#2c7be5;color:#2c7be5;';
+        btn2.onmouseover=function(){btn2.style.background='#e8f0fe';};
+        btn2.onmouseout=function(){btn2.style.background='#fff';};
+        btn2.onclick=function(){resetRank(c.inst);};
+
+        var btn3=document.createElement('button');
+        btn3.textContent='单选模式：关';
+        btn3.style.cssText=btnCss+'border-color:#e67e22;color:#e67e22;';
+        function updateBtn3(){
+            if(singleMode){
+                btn3.textContent='单选模式：开';
+                btn3.style.background='#e67e22';btn3.style.color='#fff';btn3.style.borderColor='#e67e22';
+            }else{
+                btn3.textContent='单选模式：关';
+                btn3.style.background='#fff';btn3.style.color='#e67e22';btn3.style.borderColor='#e67e22';
+            }
+        }
+        btn3.onmouseover=function(){if(!singleMode)btn3.style.background='#fdf2e9';};
+        btn3.onmouseout=function(){if(!singleMode)btn3.style.background='#fff';};
+        btn3.onclick=function(){singleMode=!singleMode;updateBtn3();};
+
+        c.inst.on('legendselectchanged',function(params){
+            if(!singleMode)return;
+            var sel=params.selected;
+            var clicked=params.name;
+            names.forEach(function(n){
+                if(n===clicked){
+                    if(!sel[n]) c.inst.dispatchAction({type:'legendSelect',name:n});
+                }else{
+                    if(sel[n]) c.inst.dispatchAction({type:'legendUnSelect',name:n});
+                }
+            });
+        });
+
+        wrap.appendChild(btn1);
+        wrap.appendChild(btn2);
+        wrap.appendChild(btn3);
+        c.div.parentNode.insertBefore(wrap,c.div);
     });
 })();
 </script>"""
 
         html = html.replace("</head>", js_data + "\n</head>", 1)
         html = re.sub(r"(<body[^>]*>)", r"\1\n" + kpi_html, html, count=1)
-        html = html.replace("</body>", deselect_btn_js + "\n</body>", 1)
+        html = html.replace("</body>", toolbar_js + "\n</body>", 1)
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(html)
 
