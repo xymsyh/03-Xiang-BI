@@ -25,6 +25,19 @@ def to_echarts_province(name):
     return province_full_names.get(name, name + "省")
 
 
+def format_number(value):
+    """将数字格式化：>=10000用w，>=1000用k，<1000直接显示，保留1位小数"""
+    value = float(value)
+    if value >= 10000:
+        formatted = round(value / 10000, 1)
+        return f"{formatted:.1f}w"
+    elif value >= 1000:
+        formatted = round(value / 1000, 1)
+        return f"{formatted:.1f}k"
+    else:
+        return str(int(value))
+
+
 def process_file(file_path, output_dir):
     """处理单个 Excel 文件，为每个商品生成一个 HTML"""
     # ── 读取与清洗数据 ────────────────────────────────────────
@@ -235,8 +248,11 @@ def process_file(file_path, output_dir):
         os.makedirs(output_product_dir, exist_ok=True)
 
         safe_product_name = re.sub(r'[<>:"/\\|?*]', '', product_name)
-        sales_int = int(total_sales)
-        filename = f"{idx:02d}【{sales_int}元{total_qty}件{total_stock}库{unit_price:.2f}单】{safe_product_name}.html"
+        sales_fmt = format_number(total_sales)
+        qty_fmt = format_number(total_qty)
+        stock_fmt = format_number(total_stock)
+        price_fmt = f"{unit_price:.2f}".rstrip('0').rstrip('.')
+        filename = f"{idx:02d}【{sales_fmt}  {qty_fmt}  {stock_fmt}  {price_fmt}】{safe_product_name}.html"
         output_file = os.path.join(output_product_dir, filename)
 
         # ── 渲染输出 ──────────────────────────────────────────────
