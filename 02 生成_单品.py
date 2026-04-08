@@ -67,10 +67,11 @@ def process_file(file_path, output_dir):
     # ── 按商品名称分组并按销售额排序 ────────────────────────
     product_groups = []
     for product_name, df_product in df.groupby("商品名称"):
-        # 计算汇总数据用于排序
-        total_sales = float(df_product["商品销售额"].sum())
-        total_qty = int(df_product["商品销售量"].sum())
-        total_stock = int(df_product["总库存"].sum())
+        # 计算汇总数据用于排序（排除"全国"行，避免翻倍）
+        df_no_national = df_product[df_product["城市_清洗"] != "全国"]
+        total_sales = float(df_no_national["商品销售额"].sum())
+        total_qty = int(df_no_national["商品销售量"].sum())
+        total_stock = int(df_no_national["总库存"].sum())
         unit_price = round(total_sales / total_qty, 2) if total_qty else 0
         product_groups.append({
             "name": product_name,
@@ -85,9 +86,10 @@ def process_file(file_path, output_dir):
     product_groups.sort(key=lambda x: x["sales"], reverse=True)
 
     # ── 插入全部商品汇总（编号 00）────────────────────────
-    _all_sales = float(df["商品销售额"].sum())
-    _all_qty   = int(df["商品销售量"].sum())
-    _all_stock = int(df["总库存"].sum())
+    _df_no_national = df[df["城市_清洗"] != "全国"]
+    _all_sales = float(_df_no_national["商品销售额"].sum())
+    _all_qty   = int(_df_no_national["商品销售量"].sum())
+    _all_stock = int(_df_no_national["总库存"].sum())
     product_groups.insert(0, {
         "name": "全部商品汇总",
         "df": df,
