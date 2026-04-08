@@ -102,6 +102,7 @@ def process_file(file_path, output_dir):
         )
         df_city["单价"] = (df_city["商品销售额"] / df_city["商品销售量"].replace(0, float("nan"))).round(2)
         df_city["预估60天销量"] = (df_city["商品销售量"] * ESTIMATED_60DAY_MULTIPLIER).astype(int)
+        df_city["周转周期"] = (df_city["总库存"] / df_city["预估60天销量"].replace(0, float("nan"))).round(2)
 
         # 省份级聚合：去掉末尾"市"防止误截，再用映射表推导省份
         df_city["城市_标准"] = df_city["城市_清洗"].apply(lambda x: re.sub(r"市$", "", x))
@@ -117,6 +118,7 @@ def process_file(file_path, output_dir):
         )
         df_province["单价"] = (df_province["商品销售额"] / df_province["商品销售量"].replace(0, float("nan"))).round(2)
         df_province["预估60天销量"] = (df_province["商品销售量"] * ESTIMATED_60DAY_MULTIPLIER).astype(int)
+        df_province["周转周期"] = (df_province["总库存"] / df_province["预估60天销量"].replace(0, float("nan"))).round(2)
 
         # ── 准备绘图数据 ──────────────────────────────────────────
         province_map_data  = [[to_echarts_province(p), float(v)]
@@ -128,6 +130,7 @@ def process_file(file_path, output_dir):
                 "销售量": int(row["商品销售量"]),
                 "总库存": int(row["总库存"]),
                 "单价":   round(float(row["单价"]), 2) if pd.notna(row["单价"]) else None,
+                "周转周期": round(float(row["周转周期"]), 2) if pd.notna(row["周转周期"]) else None,
             }
 
         province_tooltip_dict = {}
@@ -165,7 +168,8 @@ def process_file(file_path, output_dir):
                     "return p.name+'<br/>销售额: ¥'+p.value+' 元'"
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
-                    "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-');}"
+                    "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
+                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 天':'-');}"
                 )),
             )
         )
@@ -183,6 +187,8 @@ def process_file(file_path, output_dir):
                        label_opts=opts.LabelOpts(position="right"))
             .add_yaxis("总库存", province_rank_data["总库存"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
+            .add_yaxis("周转周期(天)", province_rank_data["周转周期"].tolist()[::-1],
+                       label_opts=opts.LabelOpts(position="right"))
             .reversal_axis()
             .set_global_opts(
                 title_opts=opts.TitleOpts(title="省份销售额排行榜（全部）"),
@@ -193,7 +199,8 @@ def process_file(file_path, output_dir):
                     "return p.name+'<br/>销售额: ¥'+p.value+' 元'"
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
-                    "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-');}"
+                    "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
+                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 天':'-');}"
                 )),
             )
         )
@@ -212,7 +219,8 @@ def process_file(file_path, output_dir):
                     "return p.name+'<br/>销售额: ¥'+p.value[2]+' 元'"
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
-                    "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-');}"
+                    "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
+                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 天':'-');}"
                 )),
             )
         )
@@ -235,6 +243,8 @@ def process_file(file_path, output_dir):
                        label_opts=opts.LabelOpts(position="right"))
             .add_yaxis("总库存", city_rank_data["总库存"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
+            .add_yaxis("周转周期(天)", city_rank_data["周转周期"].tolist()[::-1],
+                       label_opts=opts.LabelOpts(position="right"))
             .reversal_axis()
             .set_global_opts(
                 title_opts=opts.TitleOpts(title="城市销售额排行榜（全部）"),
@@ -250,7 +260,8 @@ def process_file(file_path, output_dir):
                     "return label+'<br/>销售额: ¥'+p.value+' 元'"
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
-                    "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-');}"
+                    "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
+                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 天':'-');}"
                 )),
             )
         )
