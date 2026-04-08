@@ -169,7 +169,7 @@ def process_file(file_path, output_dir):
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
-                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 天':'-');}"
+                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
                 )),
             )
         )
@@ -187,7 +187,7 @@ def process_file(file_path, output_dir):
                        label_opts=opts.LabelOpts(position="right"))
             .add_yaxis("总库存", province_rank_data["总库存"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("周转周期(天)", province_rank_data["周转周期"].tolist()[::-1],
+            .add_yaxis("周转周期(次)", province_rank_data["周转周期"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
             .reversal_axis()
             .set_global_opts(
@@ -200,7 +200,7 @@ def process_file(file_path, output_dir):
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
-                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 天':'-');}"
+                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
                 )),
             )
         )
@@ -220,7 +220,7 @@ def process_file(file_path, output_dir):
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
-                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 天':'-');}"
+                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
                 )),
             )
         )
@@ -243,7 +243,7 @@ def process_file(file_path, output_dir):
                        label_opts=opts.LabelOpts(position="right"))
             .add_yaxis("总库存", city_rank_data["总库存"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("周转周期(天)", city_rank_data["周转周期"].tolist()[::-1],
+            .add_yaxis("周转周期(次)", city_rank_data["周转周期"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
             .reversal_axis()
             .set_global_opts(
@@ -261,7 +261,7 @@ def process_file(file_path, output_dir):
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
-                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 天':'-');}"
+                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
                 )),
             )
         )
