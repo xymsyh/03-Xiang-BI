@@ -475,12 +475,12 @@ def process_file(file_path, output_dir):
         if idx == 0:
             xlsx_output = output_file.replace(".html", ".xlsx")
             product_rows = []
-            for pg in product_groups[1:]:
+            for _pi, pg in enumerate(product_groups[1:], 1):
                 _pg_qty = pg["qty"]
                 _pg_est60 = _pg_qty * ESTIMATED_60DAY_MULTIPLIER
                 _pg_turnover = round(pg["stock"] / _pg_est60, 2) if _pg_est60 else None
                 product_rows.append({
-                    "商品名称": pg["name"],
+                    "商品名称": f"【{_pi:02d}】{pg['name']}",
                     "销售额": pg["sales"],
                     "销售量": _pg_qty,
                     "预估60天销量": _pg_est60,
