@@ -9,6 +9,9 @@ from pyecharts.charts import Bar, Geo, Map, Page
 from pyecharts.commons.utils import JsCode
 from pyecharts.globals import ThemeType
 
+# ── 配置参数 ──────────────────────────────────────────────
+ESTIMATED_60DAY_MULTIPLIER = 2  # 预估60天销量 = 销量 × 该倍数
+
 # ── 路径配置 ──────────────────────────────────────────────
 BASE_DIR     = r"D:\2026\03 小象BI"
 INPUT_DIR    = os.path.join(BASE_DIR, "02 生成")
@@ -98,6 +101,7 @@ def process_file(file_path, output_dir):
               .round(2).reset_index()
         )
         df_city["单价"] = (df_city["商品销售额"] / df_city["商品销售量"].replace(0, float("nan"))).round(2)
+        df_city["预估60天销量"] = (df_city["商品销售量"] * ESTIMATED_60DAY_MULTIPLIER).astype(int)
 
         # 省份级聚合：去掉末尾"市"防止误截，再用映射表推导省份
         df_city["城市_标准"] = df_city["城市_清洗"].apply(lambda x: re.sub(r"市$", "", x))
@@ -112,6 +116,7 @@ def process_file(file_path, output_dir):
                    .sort_values("商品销售额", ascending=False)
         )
         df_province["单价"] = (df_province["商品销售额"] / df_province["商品销售量"].replace(0, float("nan"))).round(2)
+        df_province["预估60天销量"] = (df_province["商品销售量"] * ESTIMATED_60DAY_MULTIPLIER).astype(int)
 
         # ── 准备绘图数据 ──────────────────────────────────────────
         province_map_data  = [[to_echarts_province(p), float(v)]
@@ -172,6 +177,10 @@ def process_file(file_path, output_dir):
             .add_xaxis(province_rank_data["省份"].tolist()[::-1])
             .add_yaxis("总销售额", province_rank_data["商品销售额"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
+            .add_yaxis("销售量", province_rank_data["商品销售量"].tolist()[::-1],
+                       label_opts=opts.LabelOpts(position="right"))
+            .add_yaxis("预估60天销量", province_rank_data["预估60天销量"].tolist()[::-1],
+                       label_opts=opts.LabelOpts(position="right"))
             .add_yaxis("总库存", province_rank_data["总库存"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
             .reversal_axis()
@@ -219,6 +228,10 @@ def process_file(file_path, output_dir):
             Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_city_h))
             .add_xaxis(city_rank_data["城市_轴标"].tolist()[::-1])
             .add_yaxis("总销售额", city_rank_data["商品销售额"].tolist()[::-1],
+                       label_opts=opts.LabelOpts(position="right"))
+            .add_yaxis("销售量", city_rank_data["商品销售量"].tolist()[::-1],
+                       label_opts=opts.LabelOpts(position="right"))
+            .add_yaxis("预估60天销量", city_rank_data["预估60天销量"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
             .add_yaxis("总库存", city_rank_data["总库存"].tolist()[::-1],
                        label_opts=opts.LabelOpts(position="right"))
