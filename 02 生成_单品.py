@@ -127,11 +127,35 @@ def process_file(file_path, output_dir):
 
         def _row_dict(row):
             return {
+                "销售额": round(float(row["商品销售额"]), 2),
                 "销售量": int(row["商品销售量"]),
+                "预估60天销量": int(row["预估60天销量"]),
                 "总库存": int(row["总库存"]),
                 "单价":   round(float(row["单价"]), 2) if pd.notna(row["单价"]) else None,
                 "周转周期": round(float(row["周转周期"]), 2) if pd.notna(row["周转周期"]) else None,
             }
+
+        def _normalize_series(values):
+            """归一化到各自最大值的百分比，返回 [{value, original}, ...]"""
+            clean = [v for v in values if v is not None and not (isinstance(v, float) and pd.isna(v))]
+            max_val = max(abs(v) for v in clean) if clean else 1
+            if max_val == 0:
+                max_val = 1
+            result = []
+            for v in values:
+                if v is None or (isinstance(v, float) and pd.isna(v)):
+                    result.append({"value": 0, "original": None})
+                else:
+                    result.append({"value": round(v / max_val * 100, 2),
+                                   "original": round(v, 2) if isinstance(v, float) else v})
+            return result
+
+        _norm_label = opts.LabelOpts(
+            position="right",
+            formatter=JsCode("function(p){var o=p.data.original;"
+                             "if(o==null)return'-';"
+                             "return typeof o==='number'?(o%1===0?''+o:o.toFixed(2)):''+o;}")
+        )
 
         province_tooltip_dict = {}
         for _, row in df_province.iterrows():
@@ -179,26 +203,28 @@ def process_file(file_path, output_dir):
         chart_province_bar = (
             Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_province_h))
             .add_xaxis(province_rank_data["省份"].tolist()[::-1])
-            .add_yaxis("总销售额", province_rank_data["商品销售额"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("销售量", province_rank_data["商品销售量"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("预估60天销量", province_rank_data["预估60天销量"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("总库存", province_rank_data["总库存"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("周转周期(次)", province_rank_data["周转周期"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
+            .add_yaxis("总销售额", _normalize_series(province_rank_data["商品销售额"].tolist()[::-1]),
+                       label_opts=_norm_label)
+            .add_yaxis("销售量", _normalize_series(province_rank_data["商品销售量"].tolist()[::-1]),
+                       label_opts=_norm_label)
+            .add_yaxis("预估60天销量", _normalize_series(province_rank_data["预估60天销量"].tolist()[::-1]),
+                       label_opts=_norm_label)
+            .add_yaxis("总库存", _normalize_series(province_rank_data["总库存"].tolist()[::-1]),
+                       label_opts=_norm_label)
+            .add_yaxis("周转周期(次)", _normalize_series(province_rank_data["周转周期"].tolist()[::-1]),
+                       label_opts=_norm_label)
             .reversal_axis()
             .set_global_opts(
                 title_opts=opts.TitleOpts(title="省份销售额排行榜（全部）"),
-                xaxis_opts=opts.AxisOpts(name="金额 / 库存"),
+                xaxis_opts=opts.AxisOpts(name="相对比例 (%)", max_=100),
                 legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
                     selected_map={"总销售额": True, "销售量": False, "预估60天销量": False, "总库存": True, "周转周期(次)": False}),
                 tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
                     "function(ps){var p=ps[0],d=PROVINCE_DATA[p.name]||{};"
-                    "return p.name+'<br/>销售额: ¥'+p.value+' 元'"
+                    "return p.name"
+                    "+'<br/>销售额: '+(d.销售额!=null?'¥'+d.销售额+' 元':'-')"
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
+                    "+'<br/>预估60天销量: '+(d.预估60天销量!=null?d.预估60天销量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
                     "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
@@ -236,20 +262,20 @@ def process_file(file_path, output_dir):
         chart_city_bar = (
             Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_city_h))
             .add_xaxis(city_rank_data["城市_轴标"].tolist()[::-1])
-            .add_yaxis("总销售额", city_rank_data["商品销售额"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("销售量", city_rank_data["商品销售量"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("预估60天销量", city_rank_data["预估60天销量"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("总库存", city_rank_data["总库存"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
-            .add_yaxis("周转周期(次)", city_rank_data["周转周期"].tolist()[::-1],
-                       label_opts=opts.LabelOpts(position="right"))
+            .add_yaxis("总销售额", _normalize_series(city_rank_data["商品销售额"].tolist()[::-1]),
+                       label_opts=_norm_label)
+            .add_yaxis("销售量", _normalize_series(city_rank_data["商品销售量"].tolist()[::-1]),
+                       label_opts=_norm_label)
+            .add_yaxis("预估60天销量", _normalize_series(city_rank_data["预估60天销量"].tolist()[::-1]),
+                       label_opts=_norm_label)
+            .add_yaxis("总库存", _normalize_series(city_rank_data["总库存"].tolist()[::-1]),
+                       label_opts=_norm_label)
+            .add_yaxis("周转周期(次)", _normalize_series(city_rank_data["周转周期"].tolist()[::-1]),
+                       label_opts=_norm_label)
             .reversal_axis()
             .set_global_opts(
                 title_opts=opts.TitleOpts(title="城市销售额排行榜（全部）"),
-                xaxis_opts=opts.AxisOpts(name="金额 / 库存"),
+                xaxis_opts=opts.AxisOpts(name="相对比例 (%)", max_=100),
                 legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
                     selected_map={"总销售额": True, "销售量": False, "预估60天销量": False, "总库存": True, "周转周期(次)": False}),
                 tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
@@ -259,8 +285,10 @@ def process_file(file_path, output_dir):
                     "var city=m?m[2]:p.name,prov=m?m[1]:'';"
                     "var label=m?city+'（'+prov+'）':city;"
                     "var d=CITY_DATA[city]||{};"
-                    "return label+'<br/>销售额: ¥'+p.value+' 元'"
+                    "return label"
+                    "+'<br/>销售额: '+(d.销售额!=null?'¥'+d.销售额+' 元':'-')"
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
+                    "+'<br/>预估60天销量: '+(d.预估60天销量!=null?d.预估60天销量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
                     "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
@@ -343,8 +371,8 @@ def process_file(file_path, output_dir):
             slist.forEach(function(s){
                 if(selected[s.name]!==false){
                     var v=s.data[i];
-                    if(typeof v==='number') sum+=v;
-                    else if(v&&typeof v.value==='number') sum+=v.value;
+                    var raw=v&&v.original!=null?v.original:(typeof v==='number'?v:0);
+                    if(typeof raw==='number') sum+=raw;
                 }
             });
             return {i:i,s:sum};
