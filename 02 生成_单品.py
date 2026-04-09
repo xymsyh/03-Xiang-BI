@@ -1133,9 +1133,9 @@ def process_file(file_path, output_dir):
             # 按积压件数降序排序
             _alert_items.sort(key=lambda x: x["excess"], reverse=True)
 
-            # 重新编号（显示在商品名前）
-            for _ai, it in enumerate(_alert_items, 1):
-                it["label"] = f"【{_ai:02d}】{it['name']}"
+            # 编号沿用单品文件名中的原始销售额排名（orig_idx），方便快速查阅对应明细
+            for it in _alert_items:
+                it["label"] = f"【{it['orig_idx']:02d}】{it['name']}"
 
             if len(_alert_items) == 0:
                 # 无预警商品，仅生成一个空提示页
@@ -1294,6 +1294,7 @@ def process_file(file_path, output_dir):
                 _potential = round(_avg_city_sales * _missing_count, 2)
 
                 _expand_all.append({
+                    "orig_idx": _pi,
                     "name": pg["name"],
                     "sales": _pg_sales,
                     "qty": _pg_qty,
@@ -1315,9 +1316,9 @@ def process_file(file_path, output_dir):
             if len(_expand_items) == 0 or _total_city_count == 0:
                 print(f"跳过：无爆品或无运营城市，未生成 {expand_output}")
             else:
-                # 重新编号（按潜力排序）
-                for _ei, it in enumerate(_expand_items, 1):
-                    it["label"] = f"【{_ei:02d}】{it['name']}"
+                # 编号沿用单品文件名中的原始销售额排名（orig_idx），方便快速查阅对应明细
+                for it in _expand_items:
+                    it["label"] = f"【{it['orig_idx']:02d}】{it['name']}"
 
                 _exp_names = [it["label"] for it in _expand_items]
                 _exp_sales_list = [it["sales"] for it in _expand_items]
