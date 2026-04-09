@@ -1059,6 +1059,9 @@ def process_file(file_path, output_dir):
         wrap.appendChild(btn3);
         wrap.appendChild(btn4);
         c.div.parentNode.insertBefore(wrap,c.div);
+
+        // 默认开启【实际数值】
+        btn4.onclick();
     });
 })();
 </script>"""
