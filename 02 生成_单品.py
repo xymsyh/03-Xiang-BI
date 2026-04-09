@@ -1258,6 +1258,221 @@ def process_file(file_path, output_dir):
                     f.write(alert_html)
                 print(f"已生成：{alert_output}")
 
+            # ── 为汇总（编号 00）生成爆品扩城市推荐 BI 看板 ──────────
+            expand_filename = filename.replace("_分城市.html", "_爆品扩城市推荐.html")
+            expand_output = os.path.join(output_product_dir, expand_filename)
+
+            # 全局 商品×城市 聚合（排除"全国"行）
+            _df_exp = df[df["城市_清洗"] != "全国"].copy()
+            _df_pc = (_df_exp.groupby(["商品名称", "城市_清洗"])
+                             .agg(pc_sales=("商品销售额", "sum"),
+                                  pc_qty=("商品销售量", "sum"))
+                             .reset_index())
+
+            # 全国运营城市集：任何商品有销量的城市并集
+            _global_cities = set(_df_pc[_df_pc["pc_qty"] > 0]["城市_清洗"].unique())
+            _total_city_count = len(_global_cities)
+
+            # 爆品筛选：销售量>0 且 周转天数<=60
+            _expand_all = []
+            for _pi, pg in enumerate(product_groups[1:], 1):
+                _pg_qty = pg["qty"]
+                _pg_stock = pg["stock"]
+                _pg_sales = pg["sales"]
+                _pg_daily = _pg_qty / num_days if num_days else 0
+                _pg_turnover = round(_pg_stock / _pg_daily, 1) if _pg_daily else None
+
+                if not (_pg_qty > 0 and _pg_turnover is not None and _pg_turnover <= 60):
+                    continue
+
+                _prod_cities = set(_df_pc[(_df_pc["商品名称"] == pg["name"]) &
+                                          (_df_pc["pc_qty"] > 0)]["城市_清洗"].unique())
+                _missing_cities = sorted(_global_cities - _prod_cities)
+                _covered_count = len(_prod_cities)
+                _missing_count = len(_missing_cities)
+                _avg_city_sales = round(_pg_sales / _covered_count, 2) if _covered_count else 0
+                _potential = round(_avg_city_sales * _missing_count, 2)
+
+                _expand_all.append({
+                    "name": pg["name"],
+                    "sales": _pg_sales,
+                    "qty": _pg_qty,
+                    "stock": _pg_stock,
+                    "turnover": _pg_turnover,
+                    "price": pg["price"],
+                    "covered_count": _covered_count,
+                    "missing_count": _missing_count,
+                    "missing_cities": _missing_cities,
+                    "avg_city_sales": _avg_city_sales,
+                    "potential": _potential,
+                })
+
+            # 按潜力扩城销售额降序，取 top 30
+            _expand_all.sort(key=lambda x: x["potential"], reverse=True)
+            TOP_N_EXPAND = 30
+            _expand_items = _expand_all[:TOP_N_EXPAND]
+
+            if len(_expand_items) == 0 or _total_city_count == 0:
+                print(f"跳过：无爆品或无运营城市，未生成 {expand_output}")
+            else:
+                # 重新编号（按潜力排序）
+                for _ei, it in enumerate(_expand_items, 1):
+                    it["label"] = f"【{_ei:02d}】{it['name']}"
+
+                _exp_names = [it["label"] for it in _expand_items]
+                _exp_sales_list = [it["sales"] for it in _expand_items]
+                _exp_avg_city_list = [it["avg_city_sales"] for it in _expand_items]
+                _exp_potential_list = [it["potential"] for it in _expand_items]
+                _exp_covered_list = [it["covered_count"] for it in _expand_items]
+                _exp_missing_list = [it["missing_count"] for it in _expand_items]
+
+                _exp_tooltip = {}
+                for it in _expand_items:
+                    _exp_tooltip[it["label"]] = {
+                        "销售额": round(float(it["sales"]), 2),
+                        "销售量": it["qty"],
+                        "周转天数": it["turnover"],
+                        "单价": it["price"],
+                        "已覆盖城市数": it["covered_count"],
+                        "缺失城市数": it["missing_count"],
+                        "单城市均销": it["avg_city_sales"],
+                        "潜力扩城销售额": it["potential"],
+                    }
+
+                # KPI 汇总
+                _exp_count = len(_expand_items)
+                _exp_total_potential = sum(it["potential"] for it in _expand_items)
+                _exp_avg_coverage = (
+                    sum(it["covered_count"] for it in _expand_items) /
+                    (_exp_count * _total_city_count) * 100
+                ) if _exp_count and _total_city_count else 0
+
+                _expand_h = f"{max(600, len(_exp_names) * 36 + 80)}px"
+                chart_expand_bar = (
+                    Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_expand_h))
+                    .add_xaxis(_exp_names[::-1])
+                    .add_yaxis("总销售额", _normalize_series(_exp_sales_list[::-1]),
+                               label_opts=_norm_label)
+                    .add_yaxis("单城市均销", _normalize_series(_exp_avg_city_list[::-1]),
+                               label_opts=_norm_label)
+                    .add_yaxis("潜力扩城销售额", _normalize_series(_exp_potential_list[::-1]),
+                               label_opts=_norm_label,
+                               itemstyle_opts=opts.ItemStyleOpts(color="#e74c3c"))
+                    .add_yaxis("已覆盖城市数", _normalize_series(_exp_covered_list[::-1]),
+                               label_opts=_norm_label)
+                    .add_yaxis("缺失城市数", _normalize_series(_exp_missing_list[::-1]),
+                               label_opts=_norm_label,
+                               itemstyle_opts=opts.ItemStyleOpts(color="#f39c12"))
+                    .reversal_axis()
+                    .set_global_opts(
+                        title_opts=opts.TitleOpts(title=f"爆品扩城市推荐（动销好的商品 × 缺失城市，全国共{_total_city_count}个运营城市）"),
+                        xaxis_opts=opts.AxisOpts(name="相对比例 (%)", max_=100),
+                        legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
+                            selected_map={"总销售额": False, "单城市均销": False,
+                                          "潜力扩城销售额": True, "已覆盖城市数": False, "缺失城市数": True}),
+                        tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
+                            "function(ps){var p=ps[0],d=EXPAND_DATA[p.name]||{};"
+                            "return p.name"
+                            "+'<br/>销售额: '+(d.销售额!=null?'¥'+d.销售额+' 元':'-')"
+                            "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
+                            "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
+                            "+'<br/>周转天数: '+(d.周转天数!=null?d.周转天数+' 天':'-')"
+                            "+'<br/>已覆盖城市数: '+(d.已覆盖城市数!=null?d.已覆盖城市数+' 个':'-')"
+                            "+'<br/><b>缺失城市数: '+(d.缺失城市数!=null?d.缺失城市数+' 个':'-')+'</b>'"
+                            "+'<br/>单城市均销: '+(d.单城市均销!=null?'¥'+d.单城市均销:'-')"
+                            "+'<br/><b>潜力扩城销售额: '+(d.潜力扩城销售额!=null?'¥'+d.潜力扩城销售额+' 元':'-')+'</b>';}"
+                        )),
+                    )
+                )
+
+                expand_page = Page(layout=Page.SimplePageLayout)
+                expand_page.add(chart_expand_bar)
+                expand_page.render(expand_output)
+
+                expand_js_data = (
+                    "<script>\n"
+                    f"var EXPAND_DATA={json.dumps(_exp_tooltip, ensure_ascii=False)};\n"
+                    "</script>"
+                )
+
+                # 扩城专用 KPI 卡片
+                expand_kpi_html = f"""
+<div style="font-family:'Microsoft YaHei',sans-serif;background:#f0fff4;padding:14px 24px 12px;border-bottom:2px solid #c8e6c9;margin-bottom:4px;">
+  <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap;">
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(39,174,96,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">爆品数量</div>
+      <div style="color:#27ae60;font-size:26px;font-weight:bold;">{_exp_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">动销&lt;60天&取Top{TOP_N_EXPAND}</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(39,174,96,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">全国运营城市数</div>
+      <div style="color:#2c7be5;font-size:26px;font-weight:bold;">{_total_city_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">个</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(39,174,96,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">平均覆盖率</div>
+      <div style="color:#8e44ad;font-size:26px;font-weight:bold;">{_exp_avg_coverage:.1f}%</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">爆品平均铺货率</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(39,174,96,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">总潜力扩城销售额</div>
+      <div style="color:#e74c3c;font-size:26px;font-weight:bold;">¥ {_exp_total_potential:,.0f}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">元（均销×缺失数）</div>
+    </div>
+  </div>
+</div>
+"""
+
+                # 底部卡片列表：每个爆品一张卡片 + 缺失城市标签墙
+                _cards_parts = ['<div style="font-family:\'Microsoft YaHei\',sans-serif;background:#fafbfd;padding:20px;">']
+                _cards_parts.append('<h2 style="text-align:center;color:#2c3e50;margin:10px 0 20px;">📍 爆品扩城市推荐详单（按潜力降序）</h2>')
+                for it in _expand_items:
+                    _missing_tags = "".join(
+                        f'<span style="display:inline-block;background:#fff3e0;color:#e67e22;border:1px solid #ffcc80;'
+                        f'border-radius:14px;padding:4px 12px;margin:3px;font-size:12px;">{c}</span>'
+                        for c in it["missing_cities"]
+                    )
+                    if not _missing_tags:
+                        _missing_tags = '<span style="color:#27ae60;">✔ 已全量覆盖</span>'
+                    _cards_parts.append(f"""
+<div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,0.06);border-left:5px solid #e74c3c;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+    <div style="font-size:16px;font-weight:bold;color:#2c3e50;">{it['label']}</div>
+    <div style="font-size:13px;color:#555;">
+      <span style="margin-right:16px;">💰 销售额 <b style="color:#2c7be5;">¥{it['sales']:,.0f}</b></span>
+      <span style="margin-right:16px;">🏙 已覆盖 <b style="color:#27ae60;">{it['covered_count']}</b>/{_total_city_count}</span>
+      <span style="margin-right:16px;">❌ 缺失 <b style="color:#e67e22;">{it['missing_count']}</b> 城</span>
+      <span style="margin-right:16px;">📊 单城市均销 <b>¥{it['avg_city_sales']:,.0f}</b></span>
+      <span>🚀 潜力 <b style="color:#e74c3c;">¥{it['potential']:,.0f}</b></span>
+    </div>
+  </div>
+  <div style="padding-top:8px;border-top:1px dashed #eee;">
+    <div style="font-size:12px;color:#888;margin-bottom:6px;">建议开拓城市：</div>
+    <div>{_missing_tags}</div>
+  </div>
+</div>
+""")
+                _cards_parts.append('</div>')
+                expand_cards_html = "".join(_cards_parts)
+
+                # 工具按钮 JS（复用补货建议模板，替换 names，关闭默认实际数值）
+                expand_toolbar_js = replenish_toolbar_js.replace(
+                    "var names=['预估60天销量','总库存','补货建议'];",
+                    "var names=['总销售额','单城市均销','潜力扩城销售额','已覆盖城市数','缺失城市数'];"
+                ).replace(
+                    "// 默认开启【实际数值】\n        btn4.onclick();",
+                    "// 扩城看板保持归一化模式"
+                )
+
+                with open(expand_output, "r", encoding="utf-8") as f:
+                    exp_html = f.read()
+                exp_html = exp_html.replace("</head>", expand_js_data + "\n</head>", 1)
+                exp_html = re.sub(r"(<body[^>]*>)", r"\1\n" + kpi_html + expand_kpi_html, exp_html, count=1)
+                exp_html = exp_html.replace("</body>", expand_cards_html + "\n" + expand_toolbar_js + "\n</body>", 1)
+                with open(expand_output, "w", encoding="utf-8") as f:
+                    f.write(exp_html)
+                print(f"已生成：{expand_output}")
+
 
 # ── 批量处理 02 生成\02 表 目录 ──────────────────────────
 TABLE_DIR  = os.path.join(INPUT_DIR, "02 表")
