@@ -53,6 +53,8 @@ def process_file(file_path, output_dir):
 
     df["商品销售额"] = pd.to_numeric(df["商品销售额"], errors="coerce").fillna(0)
     df["商品销售量"] = pd.to_numeric(df["商品销售量"], errors="coerce").fillna(0)
+    # 有销售额但销售量为0时，视作销售量为1（原始数据销量为1时偶尔不计入统计）
+    df.loc[(df["商品销售额"] > 0) & (df["商品销售量"] == 0), "商品销售量"] = 1
     df["总库存"]     = (
         pd.to_numeric(df["供应商到大仓在途数量"], errors="coerce").fillna(0) +
         pd.to_numeric(df["大仓库存数量"],         errors="coerce").fillna(0) +
