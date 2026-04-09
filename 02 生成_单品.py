@@ -100,7 +100,7 @@ def process_file(file_path, output_dir):
     _all_qty   = int(_df_no_national["商品销售量"].sum())
     _all_stock = int(_df_no_national["总库存"].sum())
     product_groups.insert(0, {
-        "name": "全部商品汇总_城市排行榜",
+        "name": "全部商品汇总_分城市",
         "df": df,
         "sales": _all_sales,
         "qty": _all_qty,
@@ -538,7 +538,7 @@ def process_file(file_path, output_dir):
 
         # ── 为汇总（编号 00）生成同名表格文件 ────────────────────
         if idx == 0:
-            xlsx_output = output_file.replace(".html", ".xlsx")
+            xlsx_output = output_file.replace("_分城市.html", "_分单品.xlsx")
             product_rows = []
             for _pi, pg in enumerate(product_groups[1:], 1):
                 _pg_qty = pg["qty"]
@@ -564,8 +564,8 @@ def process_file(file_path, output_dir):
                 df_city_out.to_excel(writer, sheet_name="城市汇总", index=False)
             print(f"已生成：{xlsx_output}")
 
-            # ── 为汇总（编号 00）生成商品排行榜 BI 看板 ──────────────
-            ranking_filename = filename.replace(".html", "_商品排行榜.html")
+            # ── 为汇总（编号 00）生成商品排行榜 BI 看板（分单品）──────
+            ranking_filename = filename.replace("_分城市.html", "_分单品.html")
             ranking_output = os.path.join(output_product_dir, ranking_filename)
 
             # 准备商品排行数据（跳过 product_groups[0] 即"全部商品汇总"本身）
@@ -787,7 +787,7 @@ def process_file(file_path, output_dir):
             print(f"已生成：{ranking_output}")
 
             # ── 为汇总（编号 00）生成补货建议 BI 看板 ──────────────
-            replenish_filename = filename.replace(".html", "_补货建议.html")
+            replenish_filename = filename.replace("_分城市.html", "_补货建议.html")
             replenish_output = os.path.join(output_product_dir, replenish_filename)
 
             # 准备补货建议数据
@@ -1076,7 +1076,7 @@ def process_file(file_path, output_dir):
             print(f"已生成：{replenish_output}")
 
             # ── 为汇总（编号 00）生成动销差与库存积压预警 BI 看板 ──────
-            alert_filename = filename.replace(".html", "_动销差与库存积压预警.html")
+            alert_filename = filename.replace("_分城市.html", "_动销差与库存积压预警.html")
             alert_output = os.path.join(output_product_dir, alert_filename)
 
             # 全局均单价（用于零动销品估算积压金额）
