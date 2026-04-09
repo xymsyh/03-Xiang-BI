@@ -9,9 +9,6 @@ from pyecharts.charts import Bar, Geo, Map, Page
 from pyecharts.commons.utils import JsCode
 from pyecharts.globals import ThemeType
 
-# ── 配置参数 ──────────────────────────────────────────────
-ESTIMATED_60DAY_MULTIPLIER = 2  # 预估60天销量 = 销量 × 该倍数
-
 # ── 路径配置 ──────────────────────────────────────────────
 BASE_DIR     = r"D:\2026\03 小象BI"
 INPUT_DIR    = os.path.join(BASE_DIR, "02 生成")
@@ -63,6 +60,11 @@ def process_file(file_path, output_dir):
         pd.to_numeric(df["前置站点库存数量"],     errors="coerce").fillna(0)
     )
     df["城市_清洗"]  = df["城市"].astype(str).apply(lambda x: re.sub(r"（.*?）", "", x))
+
+    # ── 统计源数据天数（A列日期去重计数）────────────────────
+    num_days = df["日期"].astype(str).str.strip().nunique()
+    if num_days == 0:
+        num_days = 1
 
     # ── 按商品名称分组并按销售额排序 ────────────────────────
     product_groups = []
@@ -116,8 +118,9 @@ def process_file(file_path, output_dir):
               .round(2).reset_index()
         )
         df_city["单价"] = (df_city["商品销售额"] / df_city["商品销售量"].replace(0, float("nan"))).round(2)
-        df_city["预估60天销量"] = (df_city["商品销售量"] * ESTIMATED_60DAY_MULTIPLIER).astype(int)
-        df_city["周转周期"] = (df_city["总库存"] / df_city["预估60天销量"].replace(0, float("nan"))).round(2)
+        df_city["单日销量"] = (df_city["商品销售量"] / num_days).round(2)
+        df_city["预估60天销量"] = (df_city["单日销量"] * 60).astype(int)
+        df_city["周转天数"] = (df_city["总库存"] / df_city["单日销量"].replace(0, float("nan"))).round(1)
 
         # 省份级聚合：去掉末尾"市"防止误截，再用映射表推导省份
         df_city["城市_标准"] = df_city["城市_清洗"].apply(lambda x: re.sub(r"市$", "", x))
@@ -132,8 +135,9 @@ def process_file(file_path, output_dir):
                    .sort_values("商品销售额", ascending=False)
         )
         df_province["单价"] = (df_province["商品销售额"] / df_province["商品销售量"].replace(0, float("nan"))).round(2)
-        df_province["预估60天销量"] = (df_province["商品销售量"] * ESTIMATED_60DAY_MULTIPLIER).astype(int)
-        df_province["周转周期"] = (df_province["总库存"] / df_province["预估60天销量"].replace(0, float("nan"))).round(2)
+        df_province["单日销量"] = (df_province["商品销售量"] / num_days).round(2)
+        df_province["预估60天销量"] = (df_province["单日销量"] * 60).astype(int)
+        df_province["周转天数"] = (df_province["总库存"] / df_province["单日销量"].replace(0, float("nan"))).round(1)
 
         # ── 准备绘图数据 ──────────────────────────────────────────
         province_map_data  = [[to_echarts_province(p), float(v)]
@@ -147,7 +151,7 @@ def process_file(file_path, output_dir):
                 "预估60天销量": int(row["预估60天销量"]),
                 "总库存": int(row["总库存"]),
                 "单价":   round(float(row["单价"]), 2) if pd.notna(row["单价"]) else None,
-                "周转周期": round(float(row["周转周期"]), 2) if pd.notna(row["周转周期"]) else None,
+                "周转天数": round(float(row["周转天数"]), 1) if pd.notna(row["周转天数"]) else None,
             }
 
         def _normalize_series(values):
@@ -208,7 +212,7 @@ def process_file(file_path, output_dir):
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
-                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
+                    "+'<br/>周转天数: '+(d.周转天数!=null?d.周转天数+' 天':'-');}"
                 )),
             )
         )
@@ -226,14 +230,14 @@ def process_file(file_path, output_dir):
                        label_opts=_norm_label)
             .add_yaxis("总库存", _normalize_series(province_rank_data["总库存"].tolist()[::-1]),
                        label_opts=_norm_label)
-            .add_yaxis("周转周期(次)", _normalize_series(province_rank_data["周转周期"].tolist()[::-1]),
+            .add_yaxis("周转天数(天)", _normalize_series(province_rank_data["周转天数"].tolist()[::-1]),
                        label_opts=_norm_label)
             .reversal_axis()
             .set_global_opts(
                 title_opts=opts.TitleOpts(title="省份销售额排行榜（全部）"),
                 xaxis_opts=opts.AxisOpts(name="相对比例 (%)", max_=100),
                 legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
-                    selected_map={"总销售额": True, "销售量": False, "预估60天销量": False, "总库存": True, "周转周期(次)": False}),
+                    selected_map={"总销售额": True, "销售量": False, "预估60天销量": False, "总库存": True, "周转天数(天)": False}),
                 tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
                     "function(ps){var p=ps[0],d=PROVINCE_DATA[p.name]||{};"
                     "return p.name"
@@ -242,7 +246,7 @@ def process_file(file_path, output_dir):
                     "+'<br/>预估60天销量: '+(d.预估60天销量!=null?d.预估60天销量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
-                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
+                    "+'<br/>周转天数: '+(d.周转天数!=null?d.周转天数+' 天':'-');}"
                 )),
             )
         )
@@ -262,7 +266,7 @@ def process_file(file_path, output_dir):
                     "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
-                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
+                    "+'<br/>周转天数: '+(d.周转天数!=null?d.周转天数+' 天':'-');}"
                 )),
             )
         )
@@ -285,14 +289,14 @@ def process_file(file_path, output_dir):
                        label_opts=_norm_label)
             .add_yaxis("总库存", _normalize_series(city_rank_data["总库存"].tolist()[::-1]),
                        label_opts=_norm_label)
-            .add_yaxis("周转周期(次)", _normalize_series(city_rank_data["周转周期"].tolist()[::-1]),
+            .add_yaxis("周转天数(天)", _normalize_series(city_rank_data["周转天数"].tolist()[::-1]),
                        label_opts=_norm_label)
             .reversal_axis()
             .set_global_opts(
                 title_opts=opts.TitleOpts(title="城市销售额排行榜（全部）"),
                 xaxis_opts=opts.AxisOpts(name="相对比例 (%)", max_=100),
                 legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
-                    selected_map={"总销售额": True, "销售量": False, "预估60天销量": False, "总库存": True, "周转周期(次)": False}),
+                    selected_map={"总销售额": True, "销售量": False, "预估60天销量": False, "总库存": True, "周转天数(天)": False}),
                 tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
                     "function(ps){"
                     "var p=ps[0];"
@@ -306,7 +310,7 @@ def process_file(file_path, output_dir):
                     "+'<br/>预估60天销量: '+(d.预估60天销量!=null?d.预估60天销量+' 件':'-')"
                     "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
                     "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
-                    "+'<br/>周转周期: '+(d.周转周期!=null?d.周转周期+' 次':'-');}"
+                    "+'<br/>周转天数: '+(d.周转天数!=null?d.周转天数+' 天':'-');}"
                 )),
             )
         )
@@ -321,8 +325,8 @@ def process_file(file_path, output_dir):
         qty_fmt = format_number(total_qty)
         stock_fmt = format_number(total_stock)
         price_fmt = f"{unit_price:.2f}".rstrip('0').rstrip('.')
-        est_60 = total_qty * ESTIMATED_60DAY_MULTIPLIER
-        turnover = round(total_stock / est_60, 2) if est_60 else 0
+        daily_qty = total_qty / num_days if num_days else 0
+        turnover = round(total_stock / daily_qty, 1) if daily_qty else 0
         turnover_fmt = f"{turnover:.2f}".rstrip('0').rstrip('.')
         filename = f"{idx:02d}【{sales_fmt}  {qty_fmt}  {stock_fmt}  {price_fmt}  {turnover_fmt}】{safe_product_name}.html"
         output_file = os.path.join(output_product_dir, filename)
@@ -334,9 +338,9 @@ def process_file(file_path, output_dir):
 
         # ── 注入全国总计 KPI 卡片 ─────────────────────────────────
         _price_str = f"¥ {national_price:,.2f}" if national_price else "-"
-        _national_est60 = national_qty * ESTIMATED_60DAY_MULTIPLIER
-        _national_turnover = round(national_stock / _national_est60, 2) if _national_est60 else None
-        _turnover_str = f"{_national_turnover:.2f}".rstrip('0').rstrip('.') if _national_turnover is not None else "-"
+        _national_daily_qty = national_qty / num_days if num_days else 0
+        _national_turnover = round(national_stock / _national_daily_qty, 1) if _national_daily_qty else None
+        _turnover_str = f"{_national_turnover:.1f}".rstrip('0').rstrip('.') if _national_turnover is not None else "-"
         kpi_html = f"""
 <div style="font-family:'Microsoft YaHei',sans-serif;background:#f0f4ff;padding:18px 24px 14px;border-bottom:2px solid #d0d8f0;margin-bottom:4px;">
   <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap;">
@@ -360,10 +364,10 @@ def process_file(file_path, output_dir):
       <div style="color:#8e44ad;font-size:28px;font-weight:bold;">{_price_str}</div>
       <div style="color:#bbb;font-size:11px;margin-top:3px;">元/件</div>
     </div>
-    <div style="background:#fff;border-radius:12px;padding:16px 28px;box-shadow:0 2px 12px rgba(44,123,229,0.11);text-align:center;min-width:160px;cursor:help;" title="周转周期 = 总库存 ÷ 预估60天销量&#10;预估60天销量 = 销量 × {ESTIMATED_60DAY_MULTIPLIER}&#10;&#10;数值越小说明库存周转越快，越大说明库存积压越多">
-      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">全国周转周期</div>
+    <div style="background:#fff;border-radius:12px;padding:16px 28px;box-shadow:0 2px 12px rgba(44,123,229,0.11);text-align:center;min-width:160px;cursor:help;" title="周转天数 = 总库存 ÷ 单日销量&#10;单日销量 = 总销售量 ÷ 统计天数({num_days}天)&#10;&#10;数值越小说明库存周转越快，越大说明库存积压越多">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">全国周转天数</div>
       <div style="color:#e74c3c;font-size:28px;font-weight:bold;">{_turnover_str}</div>
-      <div style="color:#bbb;font-size:11px;margin-top:3px;">次</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">天（统计{num_days}天）</div>
     </div>
   </div>
 </div>
@@ -384,7 +388,7 @@ def process_file(file_path, output_dir):
     allDivs.forEach(function(div){
         try{var inst=echarts.getInstanceByDom(div);if(inst)charts.push({div:div,inst:inst});}catch(e){}
     });
-    var names=['总销售额','销售量','预估60天销量','总库存','周转周期(次)'];
+    var names=['总销售额','销售量','预估60天销量','总库存','周转天数(天)'];
     var btnCss='padding:6px 18px;font-size:13px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-family:Microsoft YaHei,sans-serif;';
 
     function resetRank(chart){
@@ -531,8 +535,9 @@ def process_file(file_path, output_dir):
             product_rows = []
             for _pi, pg in enumerate(product_groups[1:], 1):
                 _pg_qty = pg["qty"]
-                _pg_est60 = _pg_qty * ESTIMATED_60DAY_MULTIPLIER
-                _pg_turnover = round(pg["stock"] / _pg_est60, 2) if _pg_est60 else None
+                _pg_daily = _pg_qty / num_days if num_days else 0
+                _pg_est60 = int(_pg_daily * 60)
+                _pg_turnover = round(pg["stock"] / _pg_daily, 1) if _pg_daily else None
                 product_rows.append({
                     "商品名称": f"【{_pi:02d}】{pg['name']}",
                     "销售额": pg["sales"],
@@ -540,11 +545,11 @@ def process_file(file_path, output_dir):
                     "预估60天销量": _pg_est60,
                     "总库存": pg["stock"],
                     "单价": pg["price"],
-                    "周转周期": _pg_turnover,
+                    "周转天数": _pg_turnover,
                 })
             df_product_summary = pd.DataFrame(product_rows)
-            df_province_out = df_province[["省份", "商品销售额", "商品销售量", "预估60天销量", "总库存", "单价", "周转周期"]].copy()
-            df_city_out = city_only[["城市_清洗", "省份", "商品销售额", "商品销售量", "预估60天销量", "总库存", "单价", "周转周期"]].copy()
+            df_province_out = df_province[["省份", "商品销售额", "商品销售量", "预估60天销量", "总库存", "单价", "周转天数"]].copy()
+            df_city_out = city_only[["城市_清洗", "省份", "商品销售额", "商品销售量", "预估60天销量", "总库存", "单价", "周转天数"]].copy()
             df_city_out.rename(columns={"城市_清洗": "城市"}, inplace=True)
             with pd.ExcelWriter(xlsx_output, engine="openpyxl") as writer:
                 df_product_summary.to_excel(writer, sheet_name="商品汇总", index=False)
