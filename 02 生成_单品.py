@@ -786,6 +786,292 @@ def process_file(file_path, output_dir):
                 f.write(rank_html)
             print(f"已生成：{ranking_output}")
 
+            # ── 为汇总（编号 00）生成补货建议 BI 看板 ──────────────
+            replenish_filename = filename.replace(".html", "_补货建议.html")
+            replenish_output = os.path.join(output_product_dir, replenish_filename)
+
+            # 准备补货建议数据
+            _rep_items = []
+            for _pi, pg in enumerate(product_groups[1:], 1):
+                _label = f"【{_pi:02d}】{pg['name']}"
+                _pg_qty = pg["qty"]
+                _pg_stock = pg["stock"]
+                _pg_sales = pg["sales"]
+                _pg_daily = _pg_qty / num_days if num_days else 0
+                _pg_est60 = int(_pg_daily * 60)
+                if _pg_qty > 0 and _pg_est60 > 0:
+                    _pg_replenish = max(0, _pg_est60 - _pg_stock)
+                    _pg_coverage = round(_pg_stock / _pg_est60 * 100, 1)
+                    if _pg_coverage < 30:
+                        _pg_urgency = "紧急"
+                    elif _pg_coverage < 70:
+                        _pg_urgency = "建议"
+                    elif _pg_coverage < 100:
+                        _pg_urgency = "关注"
+                    else:
+                        _pg_urgency = "充足"
+                else:
+                    _pg_replenish = None
+                    _pg_coverage = None
+                    _pg_urgency = "无销售历史"
+                _rep_items.append({
+                    "label": _label,
+                    "sales": _pg_sales,
+                    "qty": _pg_qty,
+                    "stock": _pg_stock,
+                    "est60": _pg_est60,
+                    "replenish": _pg_replenish,
+                    "coverage": _pg_coverage,
+                    "urgency": _pg_urgency,
+                    "price": pg["price"],
+                })
+
+            # 按补货建议降序排序（None 沉底）
+            _rep_items.sort(key=lambda x: (x["replenish"] if x["replenish"] is not None else -1), reverse=True)
+
+            _rep_names = [it["label"] for it in _rep_items]
+            _rep_est60_list = [it["est60"] for it in _rep_items]
+            _rep_stock_list = [it["stock"] for it in _rep_items]
+            _rep_replenish_list = [it["replenish"] if it["replenish"] is not None else 0 for it in _rep_items]
+
+            _rep_tooltip = {}
+            for it in _rep_items:
+                _rep_tooltip[it["label"]] = {
+                    "销售额": round(float(it["sales"]), 2),
+                    "销售量": it["qty"],
+                    "预估60天销量": it["est60"],
+                    "总库存": it["stock"],
+                    "单价": it["price"],
+                    "库存覆盖率": it["coverage"],
+                    "补货建议": it["replenish"],
+                    "紧急度": it["urgency"],
+                }
+
+            # 补货汇总 KPI
+            _rep_need_count = sum(1 for it in _rep_items if it["replenish"] is not None and it["replenish"] > 0)
+            _rep_total_qty = sum(it["replenish"] for it in _rep_items if it["replenish"] is not None)
+            _rep_urgent_count = sum(1 for it in _rep_items if it["urgency"] == "紧急")
+            _rep_with_sales = sum(1 for it in _rep_items if it["replenish"] is not None)
+            _rep_enough_count = sum(1 for it in _rep_items if it["replenish"] == 0)
+            _rep_enough_rate = f"{_rep_enough_count / _rep_with_sales * 100:.1f}%" if _rep_with_sales else "-"
+
+            _replenish_h = f"{max(600, len(_rep_names) * 32 + 80)}px"
+            chart_replenish_bar = (
+                Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_replenish_h))
+                .add_xaxis(_rep_names[::-1])
+                .add_yaxis("预估60天销量", _normalize_series(_rep_est60_list[::-1]),
+                           label_opts=_norm_label)
+                .add_yaxis("总库存", _normalize_series(_rep_stock_list[::-1]),
+                           label_opts=_norm_label)
+                .add_yaxis("补货建议", _normalize_series(_rep_replenish_list[::-1]),
+                           label_opts=_norm_label,
+                           itemstyle_opts=opts.ItemStyleOpts(color="#e74c3c"))
+                .reversal_axis()
+                .set_global_opts(
+                    title_opts=opts.TitleOpts(title="商品补货建议（预估60天销量 − 当前库存）"),
+                    xaxis_opts=opts.AxisOpts(name="相对比例 (%)", max_=100),
+                    legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
+                        selected_map={"预估60天销量": True, "总库存": True, "补货建议": True}),
+                    tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
+                        "function(ps){var p=ps[0],d=REPLENISH_DATA[p.name]||{};"
+                        "return p.name"
+                        "+'<br/>销售额: '+(d.销售额!=null?'¥'+d.销售额+' 元':'-')"
+                        "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
+                        "+'<br/>预估60天销量: '+(d.预估60天销量!=null?d.预估60天销量+' 件':'-')"
+                        "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
+                        "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
+                        "+'<br/>库存覆盖率: '+(d.库存覆盖率!=null?d.库存覆盖率+' %':'-')"
+                        "+'<br/><b>补货建议: '+(d.补货建议!=null?d.补货建议+' 件':'-')+'</b>'"
+                        "+'<br/>紧急度: '+(d.紧急度!=null?d.紧急度:'-');}"
+                    )),
+                )
+            )
+
+            replenish_page = Page(layout=Page.SimplePageLayout)
+            replenish_page.add(chart_replenish_bar)
+            replenish_page.render(replenish_output)
+
+            # 注入 JS 数据、KPI 卡片和工具按钮
+            replenish_js_data = (
+                "<script>\n"
+                f"var REPLENISH_DATA={json.dumps(_rep_tooltip, ensure_ascii=False)};\n"
+                "</script>"
+            )
+
+            # 补货专用 KPI 卡片（追加在通用 kpi_html 之后）
+            replenish_kpi_html = f"""
+<div style="font-family:'Microsoft YaHei',sans-serif;background:#fff5f5;padding:14px 24px 12px;border-bottom:2px solid #f0d0d0;margin-bottom:4px;">
+  <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap;">
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(231,76,60,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">需补货商品数</div>
+      <div style="color:#e74c3c;font-size:26px;font-weight:bold;">{_rep_need_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">个</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(231,76,60,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">总补货件数</div>
+      <div style="color:#c0392b;font-size:26px;font-weight:bold;">{_rep_total_qty:,}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">件</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(231,76,60,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">紧急商品数</div>
+      <div style="color:#d35400;font-size:26px;font-weight:bold;">{_rep_urgent_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">库存&lt;30%覆盖</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(231,76,60,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">库存充足率</div>
+      <div style="color:#27ae60;font-size:26px;font-weight:bold;">{_rep_enough_rate}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">≥60天覆盖占比</div>
+    </div>
+  </div>
+</div>
+"""
+
+            replenish_toolbar_js = """<script>
+(function(){
+    var allDivs=document.querySelectorAll('div[id]'),charts=[];
+    allDivs.forEach(function(div){
+        try{var inst=echarts.getInstanceByDom(div);if(inst)charts.push({div:div,inst:inst});}catch(e){}
+    });
+    var names=['预估60天销量','总库存','补货建议'];
+    var btnCss='padding:6px 18px;font-size:13px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-family:Microsoft YaHei,sans-serif;';
+
+    function resetRank(chart){
+        var opt=chart.getOption();
+        var selected=opt.legend[0].selected||{};
+        var cats=opt.yAxis[0].data;
+        var slist=opt.series;
+        var arr=cats.map(function(_,i){
+            var sum=0;
+            slist.forEach(function(s){
+                if(selected[s.name]!==false){
+                    var v=s.data[i];
+                    var raw=v&&v.original!=null?v.original:(typeof v==='number'?v:0);
+                    if(typeof raw==='number') sum+=raw;
+                }
+            });
+            return {i:i,s:sum};
+        });
+        arr.sort(function(a,b){return a.s-b.s;});
+        chart.setOption({
+            yAxis:[{data:arr.map(function(x){return cats[x.i];})}],
+            series:slist.map(function(s){
+                return {data:arr.map(function(x){return s.data[x.i];})};
+            })
+        });
+    }
+
+    charts.forEach(function(c){
+        var singleMode=false;
+
+        var wrap=document.createElement('div');
+        wrap.style.cssText='margin:8px 0 4px 20px;display:flex;gap:10px;align-items:center;';
+
+        var btn1=document.createElement('button');
+        btn1.textContent='全部不选';
+        btn1.style.cssText=btnCss;
+        btn1.onmouseover=function(){btn1.style.background='#f0f0f0';};
+        btn1.onmouseout=function(){btn1.style.background='#fff';};
+        btn1.onclick=function(){
+            names.forEach(function(n){c.inst.dispatchAction({type:'legendUnSelect',name:n});});
+        };
+
+        var btn2=document.createElement('button');
+        btn2.textContent='重置排名';
+        btn2.style.cssText=btnCss+'border-color:#2c7be5;color:#2c7be5;';
+        btn2.onmouseover=function(){btn2.style.background='#e8f0fe';};
+        btn2.onmouseout=function(){btn2.style.background='#fff';};
+        btn2.onclick=function(){resetRank(c.inst);};
+
+        var btn3=document.createElement('button');
+        btn3.textContent='单选模式：关';
+        btn3.style.cssText=btnCss+'border-color:#e67e22;color:#e67e22;';
+        function updateBtn3(){
+            if(singleMode){
+                btn3.textContent='单选模式：开';
+                btn3.style.background='#e67e22';btn3.style.color='#fff';btn3.style.borderColor='#e67e22';
+            }else{
+                btn3.textContent='单选模式：关';
+                btn3.style.background='#fff';btn3.style.color='#e67e22';btn3.style.borderColor='#e67e22';
+            }
+        }
+        btn3.onmouseover=function(){if(!singleMode)btn3.style.background='#fdf2e9';};
+        btn3.onmouseout=function(){if(!singleMode)btn3.style.background='#fff';};
+        btn3.onclick=function(){singleMode=!singleMode;updateBtn3();};
+
+        c.inst.on('legendselectchanged',function(params){
+            if(!singleMode)return;
+            var sel=params.selected;
+            var clicked=params.name;
+            names.forEach(function(n){
+                if(n===clicked){
+                    if(!sel[n]) c.inst.dispatchAction({type:'legendSelect',name:n});
+                }else{
+                    if(sel[n]) c.inst.dispatchAction({type:'legendUnSelect',name:n});
+                }
+            });
+        });
+
+        var rawMode=false;
+        var btn4=document.createElement('button');
+        btn4.textContent='实际数值';
+        btn4.style.cssText=btnCss+'border-color:#8e44ad;color:#8e44ad;';
+        function updateBtn4(){
+            if(rawMode){
+                btn4.textContent='实际数值：开';
+                btn4.style.background='#8e44ad';btn4.style.color='#fff';btn4.style.borderColor='#8e44ad';
+            }else{
+                btn4.textContent='实际数值';
+                btn4.style.background='#fff';btn4.style.color='#8e44ad';btn4.style.borderColor='#8e44ad';
+            }
+        }
+        btn4.onmouseover=function(){if(!rawMode)btn4.style.background='#f4ecf7';};
+        btn4.onmouseout=function(){if(!rawMode)btn4.style.background='#fff';};
+        btn4.onclick=function(){
+            rawMode=!rawMode;updateBtn4();
+            var opt=c.inst.getOption();
+            if(rawMode){
+                c.inst.setOption({
+                    series:opt.series.map(function(s){
+                        return {data:s.data.map(function(d){
+                            return {value:d.original!=null?d.original:0, original:d.original};
+                        })};
+                    }),
+                    xAxis:[{max:null, name:'实际数值'}]
+                });
+            }else{
+                c.inst.setOption({
+                    series:opt.series.map(function(s){
+                        var vals=s.data.map(function(d){return d.original;}).filter(function(v){return v!=null;});
+                        var mx=Math.max.apply(null,vals.map(function(v){return Math.abs(v);}));
+                        if(!mx)mx=1;
+                        return {data:s.data.map(function(d){
+                            if(d.original==null) return {value:0,original:null};
+                            return {value:Math.round(d.original/mx*10000)/100, original:d.original};
+                        })};
+                    }),
+                    xAxis:[{max:100, name:'相对比例 (%)'}]
+                });
+            }
+        };
+
+        wrap.appendChild(btn1);
+        wrap.appendChild(btn2);
+        wrap.appendChild(btn3);
+        wrap.appendChild(btn4);
+        c.div.parentNode.insertBefore(wrap,c.div);
+    });
+})();
+</script>"""
+
+            with open(replenish_output, "r", encoding="utf-8") as f:
+                rep_html = f.read()
+            rep_html = rep_html.replace("</head>", replenish_js_data + "\n</head>", 1)
+            rep_html = re.sub(r"(<body[^>]*>)", r"\1\n" + kpi_html + replenish_kpi_html, rep_html, count=1)
+            rep_html = rep_html.replace("</body>", replenish_toolbar_js + "\n</body>", 1)
+            with open(replenish_output, "w", encoding="utf-8") as f:
+                f.write(rep_html)
+            print(f"已生成：{replenish_output}")
+
 
 # ── 批量处理 02 生成\02 表 目录 ──────────────────────────
 TABLE_DIR  = os.path.join(INPUT_DIR, "02 表")
