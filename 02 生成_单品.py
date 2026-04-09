@@ -1075,6 +1075,189 @@ def process_file(file_path, output_dir):
                 f.write(rep_html)
             print(f"已生成：{replenish_output}")
 
+            # ── 为汇总（编号 00）生成动销差与库存积压预警 BI 看板 ──────
+            alert_filename = filename.replace(".html", "_动销差与库存积压预警.html")
+            alert_output = os.path.join(output_product_dir, alert_filename)
+
+            # 全局均单价（用于零动销品估算积压金额）
+            _global_avg_price = unit_price if unit_price else 0
+
+            _alert_items = []
+            for _pi, pg in enumerate(product_groups[1:], 1):
+                _pg_qty = pg["qty"]
+                _pg_stock = pg["stock"]
+                _pg_sales = pg["sales"]
+                _pg_price = pg["price"]
+                _pg_daily = _pg_qty / num_days if num_days else 0
+                _pg_est60 = int(_pg_daily * 60)
+                _pg_turnover = round(_pg_stock / _pg_daily, 1) if _pg_daily else None
+
+                # 判定是否预警
+                _is_zero_sales = (_pg_qty == 0 and _pg_stock > 0)
+                _is_slow = (_pg_qty > 0 and _pg_turnover is not None and _pg_turnover > 60)
+                if not (_is_zero_sales or _is_slow):
+                    continue
+
+                # 积压件数
+                if _is_zero_sales:
+                    _pg_excess = _pg_stock
+                else:
+                    _pg_excess = max(0, _pg_stock - _pg_est60)
+
+                # 积压金额：优先用自身单价，零动销无单价则用全局均价
+                _pg_unit_price = _pg_price if _pg_price else _global_avg_price
+                _pg_excess_value = round(_pg_excess * _pg_unit_price, 2)
+
+                # 状态分档
+                if _is_zero_sales:
+                    _pg_status = "零动销"
+                elif _pg_turnover is not None and _pg_turnover > 180:
+                    _pg_status = "严重积压"
+                else:
+                    _pg_status = "库存积压"
+
+                _alert_items.append({
+                    "orig_idx": _pi,
+                    "name": pg["name"],
+                    "sales": _pg_sales,
+                    "qty": _pg_qty,
+                    "stock": _pg_stock,
+                    "est60": _pg_est60,
+                    "turnover": _pg_turnover,
+                    "excess": _pg_excess,
+                    "excess_value": _pg_excess_value,
+                    "price": _pg_price,
+                    "status": _pg_status,
+                })
+
+            # 按积压件数降序排序
+            _alert_items.sort(key=lambda x: x["excess"], reverse=True)
+
+            # 重新编号（显示在商品名前）
+            for _ai, it in enumerate(_alert_items, 1):
+                it["label"] = f"【{_ai:02d}】{it['name']}"
+
+            if len(_alert_items) == 0:
+                # 无预警商品，仅生成一个空提示页
+                print(f"跳过：无动销差/库存积压商品，未生成 {alert_output}")
+            else:
+                _alert_names = [it["label"] for it in _alert_items]
+                _alert_est60_list = [it["est60"] for it in _alert_items]
+                _alert_stock_list = [it["stock"] for it in _alert_items]
+                _alert_excess_list = [it["excess"] for it in _alert_items]
+
+                _alert_tooltip = {}
+                for it in _alert_items:
+                    _alert_tooltip[it["label"]] = {
+                        "销售额": round(float(it["sales"]), 2),
+                        "销售量": it["qty"],
+                        "预估60天销量": it["est60"],
+                        "总库存": it["stock"],
+                        "单价": it["price"],
+                        "周转天数": it["turnover"],
+                        "积压件数": it["excess"],
+                        "积压金额": it["excess_value"],
+                        "状态": it["status"],
+                    }
+
+                # 预警汇总 KPI
+                _alert_total_count = len(_alert_items)
+                _alert_zero_count = sum(1 for it in _alert_items if it["status"] == "零动销")
+                _alert_severe_count = sum(1 for it in _alert_items if it["status"] == "严重积压")
+                _alert_total_excess_qty = sum(it["excess"] for it in _alert_items)
+                _alert_total_excess_value = sum(it["excess_value"] for it in _alert_items)
+
+                _alert_h = f"{max(600, len(_alert_names) * 32 + 80)}px"
+                chart_alert_bar = (
+                    Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_alert_h))
+                    .add_xaxis(_alert_names[::-1])
+                    .add_yaxis("预估60天销量", _normalize_series(_alert_est60_list[::-1]),
+                               label_opts=_norm_label)
+                    .add_yaxis("总库存", _normalize_series(_alert_stock_list[::-1]),
+                               label_opts=_norm_label)
+                    .add_yaxis("积压件数", _normalize_series(_alert_excess_list[::-1]),
+                               label_opts=_norm_label,
+                               itemstyle_opts=opts.ItemStyleOpts(color="#c0392b"))
+                    .reversal_axis()
+                    .set_global_opts(
+                        title_opts=opts.TitleOpts(title="商品动销差与库存积压预警（60天卖不完）"),
+                        xaxis_opts=opts.AxisOpts(name="相对比例 (%)", max_=100),
+                        legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
+                            selected_map={"预估60天销量": True, "总库存": True, "积压件数": True}),
+                        tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
+                            "function(ps){var p=ps[0],d=ALERT_DATA[p.name]||{};"
+                            "return p.name"
+                            "+'<br/><b>状态: '+(d.状态!=null?d.状态:'-')+'</b>'"
+                            "+'<br/>销售额: '+(d.销售额!=null?'¥'+d.销售额+' 元':'-')"
+                            "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
+                            "+'<br/>预估60天销量: '+(d.预估60天销量!=null?d.预估60天销量+' 件':'-')"
+                            "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
+                            "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
+                            "+'<br/>周转天数: '+(d.周转天数!=null?d.周转天数+' 天':'-')"
+                            "+'<br/><b>积压件数: '+(d.积压件数!=null?d.积压件数+' 件':'-')+'</b>'"
+                            "+'<br/><b>积压金额: '+(d.积压金额!=null?'¥'+d.积压金额+' 元':'-')+'</b>';}"
+                        )),
+                    )
+                )
+
+                alert_page = Page(layout=Page.SimplePageLayout)
+                alert_page.add(chart_alert_bar)
+                alert_page.render(alert_output)
+
+                alert_js_data = (
+                    "<script>\n"
+                    f"var ALERT_DATA={json.dumps(_alert_tooltip, ensure_ascii=False)};\n"
+                    "</script>"
+                )
+
+                # 预警专用 KPI 卡片
+                alert_kpi_html = f"""
+<div style="font-family:'Microsoft YaHei',sans-serif;background:#fff5f5;padding:14px 24px 12px;border-bottom:2px solid #f0d0d0;margin-bottom:4px;">
+  <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap;">
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(192,57,43,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">预警商品总数</div>
+      <div style="color:#c0392b;font-size:26px;font-weight:bold;">{_alert_total_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">个</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(192,57,43,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">零动销商品</div>
+      <div style="color:#7f8c8d;font-size:26px;font-weight:bold;">{_alert_zero_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">近{num_days}天无销量</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(192,57,43,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">严重积压商品</div>
+      <div style="color:#d35400;font-size:26px;font-weight:bold;">{_alert_severe_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">周转&gt;180天</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(192,57,43,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">总积压件数</div>
+      <div style="color:#e74c3c;font-size:26px;font-weight:bold;">{_alert_total_excess_qty:,}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">件</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(192,57,43,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">总积压金额</div>
+      <div style="color:#c0392b;font-size:26px;font-weight:bold;">¥ {_alert_total_excess_value:,.0f}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">元</div>
+    </div>
+  </div>
+</div>
+"""
+
+                # 工具按钮 JS（复用补货建议的模板，仅替换 names）
+                alert_toolbar_js = replenish_toolbar_js.replace(
+                    "var names=['预估60天销量','总库存','补货建议'];",
+                    "var names=['预估60天销量','总库存','积压件数'];"
+                )
+
+                with open(alert_output, "r", encoding="utf-8") as f:
+                    alert_html = f.read()
+                alert_html = alert_html.replace("</head>", alert_js_data + "\n</head>", 1)
+                alert_html = re.sub(r"(<body[^>]*>)", r"\1\n" + kpi_html + alert_kpi_html, alert_html, count=1)
+                alert_html = alert_html.replace("</body>", alert_toolbar_js + "\n</body>", 1)
+                with open(alert_output, "w", encoding="utf-8") as f:
+                    f.write(alert_html)
+                print(f"已生成：{alert_output}")
+
 
 # ── 批量处理 02 生成\02 表 目录 ──────────────────────────
 TABLE_DIR  = os.path.join(INPUT_DIR, "02 表")
