@@ -465,9 +465,53 @@ def process_file(file_path, output_dir):
             });
         });
 
+        var rawMode=false;
+        var btn4=document.createElement('button');
+        btn4.textContent='实际数值';
+        btn4.style.cssText=btnCss+'border-color:#8e44ad;color:#8e44ad;';
+        function updateBtn4(){
+            if(rawMode){
+                btn4.textContent='实际数值：开';
+                btn4.style.background='#8e44ad';btn4.style.color='#fff';btn4.style.borderColor='#8e44ad';
+            }else{
+                btn4.textContent='实际数值';
+                btn4.style.background='#fff';btn4.style.color='#8e44ad';btn4.style.borderColor='#8e44ad';
+            }
+        }
+        btn4.onmouseover=function(){if(!rawMode)btn4.style.background='#f4ecf7';};
+        btn4.onmouseout=function(){if(!rawMode)btn4.style.background='#fff';};
+        btn4.onclick=function(){
+            rawMode=!rawMode;updateBtn4();
+            var opt=c.inst.getOption();
+            if(rawMode){
+                c.inst.setOption({
+                    series:opt.series.map(function(s){
+                        return {data:s.data.map(function(d){
+                            return {value:d.original!=null?d.original:0, original:d.original};
+                        })};
+                    }),
+                    xAxis:[{max:null, name:'实际数值'}]
+                });
+            }else{
+                c.inst.setOption({
+                    series:opt.series.map(function(s){
+                        var vals=s.data.map(function(d){return d.original;}).filter(function(v){return v!=null;});
+                        var mx=Math.max.apply(null,vals.map(function(v){return Math.abs(v);}));
+                        if(!mx)mx=1;
+                        return {data:s.data.map(function(d){
+                            if(d.original==null) return {value:0,original:null};
+                            return {value:Math.round(d.original/mx*10000)/100, original:d.original};
+                        })};
+                    }),
+                    xAxis:[{max:100, name:'相对比例 (%)'}]
+                });
+            }
+        };
+
         wrap.appendChild(btn1);
         wrap.appendChild(btn2);
         wrap.appendChild(btn3);
+        wrap.appendChild(btn4);
         c.div.parentNode.insertBefore(wrap,c.div);
     });
 })();
