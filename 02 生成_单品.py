@@ -100,7 +100,7 @@ def process_file(file_path, output_dir):
     _all_qty   = int(_df_no_national["商品销售量"].sum())
     _all_stock = int(_df_no_national["总库存"].sum())
     product_groups.insert(0, {
-        "name": "全部商品汇总",
+        "name": "全部商品汇总_城市排行榜",
         "df": df,
         "sales": _all_sales,
         "qty": _all_qty,
