@@ -59,6 +59,11 @@ def process_file(file_path, output_dir):
         pd.to_numeric(df["大仓到门店在途数量"],   errors="coerce").fillna(0) +
         pd.to_numeric(df["前置站点库存数量"],     errors="coerce").fillna(0)
     )
+    # 库存为快照数据，仅保留最新一天的值（非最新日期清零，避免多日累加）
+    _date_str = df["日期"].astype(str).str.strip()
+    _latest_date = _date_str.max()
+    df.loc[_date_str != _latest_date, "总库存"] = 0
+
     df["城市_清洗"]  = df["城市"].astype(str).apply(lambda x: re.sub(r"（.*?）", "", x))
 
     # ── 统计源数据天数（A列日期去重计数）────────────────────
