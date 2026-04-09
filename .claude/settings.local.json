@@ -9,7 +9,8 @@
       "Bash(python3 -u 02 生成_单品.py)",
       "Bash(python3 -c \"import openpyxl; wb = openpyxl.load_workbook\\('02 生成/02 表/2026年4月1日.xlsx', data_only=True\\); print\\(f'Rows: {wb.active.max_row}'\\)\")",
       "Bash(timeout 30 python3 01 生成.py)",
-      "Bash(python3 -m py_compile \"D:/2026/03 小象BI/02 生成_单品.py\")"
+      "Bash(python3 -m py_compile \"D:/2026/03 小象BI/02 生成_单品.py\")",
+      "Bash(python \"02 生成_单品.py\")"
     ]
   }
 }

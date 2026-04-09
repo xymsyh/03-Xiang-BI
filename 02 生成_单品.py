@@ -562,6 +562,228 @@ def process_file(file_path, output_dir):
                 df_city_out.to_excel(writer, sheet_name="城市汇总", index=False)
             print(f"已生成：{xlsx_output}")
 
+            # ── 为汇总（编号 00）生成商品排行榜 BI 看板 ──────────────
+            ranking_filename = filename.replace(".html", "_商品排行榜.html")
+            ranking_output = os.path.join(output_product_dir, ranking_filename)
+
+            # 准备商品排行数据（跳过 product_groups[0] 即"全部商品汇总"本身）
+            _rank_names = []
+            _rank_sales = []
+            _rank_qty = []
+            _rank_est60 = []
+            _rank_stock = []
+            _rank_turnover = []
+            _rank_tooltip = {}
+            for _pi, pg in enumerate(product_groups[1:], 1):
+                _label = f"【{_pi:02d}】{pg['name']}"
+                _rank_names.append(_label)
+                _rank_sales.append(pg["sales"])
+                _rank_qty.append(pg["qty"])
+                _pg_daily = pg["qty"] / num_days if num_days else 0
+                _pg_est60 = int(_pg_daily * 60)
+                _rank_est60.append(_pg_est60)
+                _rank_stock.append(pg["stock"])
+                _pg_turnover = round(pg["stock"] / _pg_daily, 1) if _pg_daily else None
+                _rank_turnover.append(_pg_turnover)
+                _rank_tooltip[_label] = {
+                    "销售额": round(pg["sales"], 2),
+                    "销售量": pg["qty"],
+                    "预估60天销量": _pg_est60,
+                    "总库存": pg["stock"],
+                    "单价": pg["price"],
+                    "周转天数": _pg_turnover,
+                }
+
+            _product_h = f"{max(600, len(_rank_names) * 32 + 80)}px"
+            chart_product_bar = (
+                Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_product_h))
+                .add_xaxis(_rank_names[::-1])
+                .add_yaxis("总销售额", _normalize_series(_rank_sales[::-1]),
+                           label_opts=_norm_label)
+                .add_yaxis("销售量", _normalize_series(_rank_qty[::-1]),
+                           label_opts=_norm_label)
+                .add_yaxis("预估60天销量", _normalize_series(_rank_est60[::-1]),
+                           label_opts=_norm_label)
+                .add_yaxis("总库存", _normalize_series(_rank_stock[::-1]),
+                           label_opts=_norm_label)
+                .add_yaxis("周转天数(天)", _normalize_series(_rank_turnover[::-1]),
+                           label_opts=_norm_label)
+                .reversal_axis()
+                .set_global_opts(
+                    title_opts=opts.TitleOpts(title="商品销售额排行榜（全部）"),
+                    xaxis_opts=opts.AxisOpts(name="相对比例 (%)", max_=100),
+                    legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
+                        selected_map={"总销售额": True, "销售量": False, "预估60天销量": False, "总库存": True, "周转天数(天)": False}),
+                    tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
+                        "function(ps){var p=ps[0],d=PRODUCT_DATA[p.name]||{};"
+                        "return p.name"
+                        "+'<br/>销售额: '+(d.销售额!=null?'¥'+d.销售额+' 元':'-')"
+                        "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
+                        "+'<br/>预估60天销量: '+(d.预估60天销量!=null?d.预估60天销量+' 件':'-')"
+                        "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
+                        "+'<br/>单价: '+(d.单价!=null?'¥'+d.单价:'-')"
+                        "+'<br/>周转天数: '+(d.周转天数!=null?d.周转天数+' 天':'-');}"
+                    )),
+                )
+            )
+
+            rank_page = Page(layout=Page.SimplePageLayout)
+            rank_page.add(chart_product_bar)
+            rank_page.render(ranking_output)
+
+            # 注入 JS 数据、KPI 卡片和工具按钮
+            rank_js_data = (
+                "<script>\n"
+                f"var PRODUCT_DATA={json.dumps(_rank_tooltip, ensure_ascii=False)};\n"
+                "</script>"
+            )
+
+            rank_toolbar_js = """<script>
+(function(){
+    var allDivs=document.querySelectorAll('div[id]'),charts=[];
+    allDivs.forEach(function(div){
+        try{var inst=echarts.getInstanceByDom(div);if(inst)charts.push({div:div,inst:inst});}catch(e){}
+    });
+    var names=['总销售额','销售量','预估60天销量','总库存','周转天数(天)'];
+    var btnCss='padding:6px 18px;font-size:13px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-family:Microsoft YaHei,sans-serif;';
+
+    function resetRank(chart){
+        var opt=chart.getOption();
+        var selected=opt.legend[0].selected||{};
+        var cats=opt.yAxis[0].data;
+        var slist=opt.series;
+        var arr=cats.map(function(_,i){
+            var sum=0;
+            slist.forEach(function(s){
+                if(selected[s.name]!==false){
+                    var v=s.data[i];
+                    var raw=v&&v.original!=null?v.original:(typeof v==='number'?v:0);
+                    if(typeof raw==='number') sum+=raw;
+                }
+            });
+            return {i:i,s:sum};
+        });
+        arr.sort(function(a,b){return a.s-b.s;});
+        chart.setOption({
+            yAxis:[{data:arr.map(function(x){return cats[x.i];})}],
+            series:slist.map(function(s){
+                return {data:arr.map(function(x){return s.data[x.i];})};
+            })
+        });
+    }
+
+    charts.forEach(function(c){
+        var singleMode=false;
+
+        var wrap=document.createElement('div');
+        wrap.style.cssText='margin:8px 0 4px 20px;display:flex;gap:10px;align-items:center;';
+
+        var btn1=document.createElement('button');
+        btn1.textContent='全部不选';
+        btn1.style.cssText=btnCss;
+        btn1.onmouseover=function(){btn1.style.background='#f0f0f0';};
+        btn1.onmouseout=function(){btn1.style.background='#fff';};
+        btn1.onclick=function(){
+            names.forEach(function(n){c.inst.dispatchAction({type:'legendUnSelect',name:n});});
+        };
+
+        var btn2=document.createElement('button');
+        btn2.textContent='重置排名';
+        btn2.style.cssText=btnCss+'border-color:#2c7be5;color:#2c7be5;';
+        btn2.onmouseover=function(){btn2.style.background='#e8f0fe';};
+        btn2.onmouseout=function(){btn2.style.background='#fff';};
+        btn2.onclick=function(){resetRank(c.inst);};
+
+        var btn3=document.createElement('button');
+        btn3.textContent='单选模式：关';
+        btn3.style.cssText=btnCss+'border-color:#e67e22;color:#e67e22;';
+        function updateBtn3(){
+            if(singleMode){
+                btn3.textContent='单选模式：开';
+                btn3.style.background='#e67e22';btn3.style.color='#fff';btn3.style.borderColor='#e67e22';
+            }else{
+                btn3.textContent='单选模式：关';
+                btn3.style.background='#fff';btn3.style.color='#e67e22';btn3.style.borderColor='#e67e22';
+            }
+        }
+        btn3.onmouseover=function(){if(!singleMode)btn3.style.background='#fdf2e9';};
+        btn3.onmouseout=function(){if(!singleMode)btn3.style.background='#fff';};
+        btn3.onclick=function(){singleMode=!singleMode;updateBtn3();};
+
+        c.inst.on('legendselectchanged',function(params){
+            if(!singleMode)return;
+            var sel=params.selected;
+            var clicked=params.name;
+            names.forEach(function(n){
+                if(n===clicked){
+                    if(!sel[n]) c.inst.dispatchAction({type:'legendSelect',name:n});
+                }else{
+                    if(sel[n]) c.inst.dispatchAction({type:'legendUnSelect',name:n});
+                }
+            });
+        });
+
+        var rawMode=false;
+        var btn4=document.createElement('button');
+        btn4.textContent='实际数值';
+        btn4.style.cssText=btnCss+'border-color:#8e44ad;color:#8e44ad;';
+        function updateBtn4(){
+            if(rawMode){
+                btn4.textContent='实际数值：开';
+                btn4.style.background='#8e44ad';btn4.style.color='#fff';btn4.style.borderColor='#8e44ad';
+            }else{
+                btn4.textContent='实际数值';
+                btn4.style.background='#fff';btn4.style.color='#8e44ad';btn4.style.borderColor='#8e44ad';
+            }
+        }
+        btn4.onmouseover=function(){if(!rawMode)btn4.style.background='#f4ecf7';};
+        btn4.onmouseout=function(){if(!rawMode)btn4.style.background='#fff';};
+        btn4.onclick=function(){
+            rawMode=!rawMode;updateBtn4();
+            var opt=c.inst.getOption();
+            if(rawMode){
+                c.inst.setOption({
+                    series:opt.series.map(function(s){
+                        return {data:s.data.map(function(d){
+                            return {value:d.original!=null?d.original:0, original:d.original};
+                        })};
+                    }),
+                    xAxis:[{max:null, name:'实际数值'}]
+                });
+            }else{
+                c.inst.setOption({
+                    series:opt.series.map(function(s){
+                        var vals=s.data.map(function(d){return d.original;}).filter(function(v){return v!=null;});
+                        var mx=Math.max.apply(null,vals.map(function(v){return Math.abs(v);}));
+                        if(!mx)mx=1;
+                        return {data:s.data.map(function(d){
+                            if(d.original==null) return {value:0,original:null};
+                            return {value:Math.round(d.original/mx*10000)/100, original:d.original};
+                        })};
+                    }),
+                    xAxis:[{max:100, name:'相对比例 (%)'}]
+                });
+            }
+        };
+
+        wrap.appendChild(btn1);
+        wrap.appendChild(btn2);
+        wrap.appendChild(btn3);
+        wrap.appendChild(btn4);
+        c.div.parentNode.insertBefore(wrap,c.div);
+    });
+})();
+</script>"""
+
+            with open(ranking_output, "r", encoding="utf-8") as f:
+                rank_html = f.read()
+            rank_html = rank_html.replace("</head>", rank_js_data + "\n</head>", 1)
+            rank_html = re.sub(r"(<body[^>]*>)", r"\1\n" + kpi_html, rank_html, count=1)
+            rank_html = rank_html.replace("</body>", rank_toolbar_js + "\n</body>", 1)
+            with open(ranking_output, "w", encoding="utf-8") as f:
+                f.write(rank_html)
+            print(f"已生成：{ranking_output}")
+
 
 # ── 批量处理 02 生成\02 表 目录 ──────────────────────────
 TABLE_DIR  = os.path.join(INPUT_DIR, "02 表")
