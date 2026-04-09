@@ -793,7 +793,6 @@ def process_file(file_path, output_dir):
             # 准备补货建议数据
             _rep_items = []
             for _pi, pg in enumerate(product_groups[1:], 1):
-                _label = f"【{_pi:02d}】{pg['name']}"
                 _pg_qty = pg["qty"]
                 _pg_stock = pg["stock"]
                 _pg_sales = pg["sales"]
@@ -815,7 +814,8 @@ def process_file(file_path, output_dir):
                     _pg_coverage = None
                     _pg_urgency = "无销售历史"
                 _rep_items.append({
-                    "label": _label,
+                    "orig_idx": _pi,
+                    "name": pg["name"],
                     "sales": _pg_sales,
                     "qty": _pg_qty,
                     "stock": _pg_stock,
@@ -828,6 +828,10 @@ def process_file(file_path, output_dir):
 
             # 按补货建议降序排序（None 沉底）
             _rep_items.sort(key=lambda x: (x["replenish"] if x["replenish"] is not None else -1), reverse=True)
+
+            # 生成 label：【文件编号】商品名【顺序编号】
+            for _oi, it in enumerate(_rep_items, 1):
+                it["label"] = f"【{it['orig_idx']:02d}】{it['name']}【{_oi:02d}】"
 
             _rep_names = [it["label"] for it in _rep_items]
             _rep_est60_list = [it["est60"] for it in _rep_items]
@@ -1133,9 +1137,9 @@ def process_file(file_path, output_dir):
             # 按积压件数降序排序
             _alert_items.sort(key=lambda x: x["excess"], reverse=True)
 
-            # 编号沿用单品文件名中的原始销售额排名（orig_idx），方便快速查阅对应明细
-            for it in _alert_items:
-                it["label"] = f"【{it['orig_idx']:02d}】{it['name']}"
+            # 生成 label：【文件编号】商品名【顺序编号】
+            for _oi, it in enumerate(_alert_items, 1):
+                it["label"] = f"【{it['orig_idx']:02d}】{it['name']}【{_oi:02d}】"
 
             if len(_alert_items) == 0:
                 # 无预警商品，仅生成一个空提示页
@@ -1316,9 +1320,9 @@ def process_file(file_path, output_dir):
             if len(_expand_items) == 0 or _total_city_count == 0:
                 print(f"跳过：无爆品或无运营城市，未生成 {expand_output}")
             else:
-                # 编号沿用单品文件名中的原始销售额排名（orig_idx），方便快速查阅对应明细
-                for it in _expand_items:
-                    it["label"] = f"【{it['orig_idx']:02d}】{it['name']}"
+                # 生成 label：【文件编号】商品名【顺序编号】
+                for _oi, it in enumerate(_expand_items, 1):
+                    it["label"] = f"【{it['orig_idx']:02d}】{it['name']}【{_oi:02d}】"
 
                 _exp_names = [it["label"] for it in _expand_items]
                 _exp_sales_list = [it["sales"] for it in _expand_items]
