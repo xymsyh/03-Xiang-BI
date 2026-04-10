@@ -1536,7 +1536,6 @@ def process_file(file_path, output_dir):
                     })
 
                 _struct_items.sort(key=lambda x: x["total"], reverse=True)
-                _struct_items = _struct_items[:30]
 
                 if len(_struct_items) == 0:
                     print(f"跳过：无库存数据，未生成 {structure_output}")
@@ -1997,6 +1996,347 @@ def process_file(file_path, output_dir):
                     print(f"已生成：{health_output}")
             except Exception as _e:
                 print(f"城市健康度看板生成失败：{_e}")
+
+            # ── 为汇总（编号 00_0）生成看板说明文档 ──────────────────
+            try:
+                readme_filename = "00_0【说明】看板说明.html"
+                readme_output = os.path.join(output_product_dir, readme_filename)
+                readme_html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>BI 看板说明文档</title>
+<style>
+  body {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #f5f7fa; color: #2c3e50; line-height: 1.7; margin: 0; padding: 30px; }}
+  .container {{ max-width: 1100px; margin: 0 auto; background: #fff; border-radius: 14px; box-shadow: 0 4px 24px rgba(0,0,0,0.06); padding: 40px 50px; }}
+  h1 {{ color: #2c7be5; border-bottom: 3px solid #2c7be5; padding-bottom: 12px; margin-top: 0; }}
+  h2 {{ color: #2c3e50; border-left: 5px solid #2c7be5; padding-left: 14px; margin-top: 36px; background: #f0f5ff; padding: 10px 14px; border-radius: 0 6px 6px 0; }}
+  h3 {{ color: #27ae60; margin-top: 22px; }}
+  .meta {{ color: #888; font-size: 13px; margin-bottom: 20px; }}
+  .nav {{ background: #f0f5ff; padding: 16px 20px; border-radius: 8px; margin-bottom: 28px; border: 1px solid #d0dff5; }}
+  .nav a {{ display: inline-block; margin: 4px 10px 4px 0; padding: 4px 12px; background: #fff; color: #2c7be5; text-decoration: none; border-radius: 14px; font-size: 13px; border: 1px solid #b8d9f0; }}
+  .nav a:hover {{ background: #2c7be5; color: #fff; }}
+  .card {{ background: #fafbfd; border-radius: 10px; padding: 20px 24px; margin: 16px 0; border-left: 5px solid #2c7be5; box-shadow: 0 2px 10px rgba(0,0,0,0.03); }}
+  .card.hot {{ border-left-color: #e74c3c; }}
+  .card.warn {{ border-left-color: #f39c12; }}
+  .card.good {{ border-left-color: #27ae60; }}
+  .card.info {{ border-left-color: #8e44ad; }}
+  .label {{ display: inline-block; background: #2c7be5; color: #fff; padding: 2px 10px; border-radius: 10px; font-size: 12px; margin-right: 8px; }}
+  .label.hot {{ background: #e74c3c; }}
+  .label.warn {{ background: #f39c12; }}
+  .label.good {{ background: #27ae60; }}
+  .label.info {{ background: #8e44ad; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }}
+  th, td {{ padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; }}
+  th {{ background: #f0f5ff; color: #2c3e50; font-weight: bold; }}
+  code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 4px; color: #c0392b; font-family: Consolas, Monaco, monospace; font-size: 13px; }}
+  .formula {{ background: #fffef0; border: 1px dashed #f0d066; padding: 10px 16px; border-radius: 6px; margin: 10px 0; font-family: Consolas, monospace; color: #b26a00; }}
+  .tip {{ background: #e8f4fd; border-left: 4px solid #2c7be5; padding: 10px 14px; margin: 12px 0; border-radius: 0 4px 4px 0; color: #1a5490; }}
+  .warn-box {{ background: #fff5f5; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 12px 0; border-radius: 0 4px 4px 0; color: #8b2a2a; }}
+  .good-box {{ background: #f0fff4; border-left: 4px solid #27ae60; padding: 10px 14px; margin: 12px 0; border-radius: 0 4px 4px 0; color: #1e6b3a; }}
+  .toc {{ font-size: 13px; color: #666; }}
+  ul {{ padding-left: 22px; }}
+  li {{ margin: 4px 0; }}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📊 编号00 全部商品汇总看板说明文档</h1>
+  <div class="meta">
+    数据源：<code>{os.path.basename(file_path)}</code> ｜ 统计天数：<b>{num_days}</b> 天 ｜ 统计日期（最新快照）：<b>{_latest_date}</b>
+  </div>
+
+  <div class="nav">
+    <b style="color:#2c3e50;">📑 快速导航：</b><br/>
+    <a href="#common">通用规则</a>
+    <a href="#f1">①分城市</a>
+    <a href="#f2">②分单品xlsx</a>
+    <a href="#f3">③分单品html</a>
+    <a href="#f4">④补货建议</a>
+    <a href="#f5">⑤动销差预警</a>
+    <a href="#f6">⑥爆品扩城市</a>
+    <a href="#f7">⑦库存结构</a>
+    <a href="#f8">⑧日销趋势</a>
+    <a href="#f9">⑨城市健康度</a>
+    <a href="#single">⑩单品明细页</a>
+    <a href="#tips">使用建议</a>
+  </div>
+
+  <h2 id="common">🔑 通用规则与关键概念</h2>
+
+  <div class="card info">
+    <h3>1. 数据清洗</h3>
+    <ul>
+      <li><b>销量修正</b>：原始数据中偶尔出现"销售额>0 但销售量=0"的情况（业务端销量为1时偶尔不计入），清洗时自动修正为销售量=1</li>
+      <li><b>"全国"行排除</b>：源数据中"全国"行是汇总行，所有统计排除该行避免翻倍</li>
+      <li><b>城市名清洗</b>：去除括号内容（如 <code>北京（华北）</code> → <code>北京</code>）</li>
+    </ul>
+  </div>
+
+  <div class="card info">
+    <h3>2. 库存快照策略</h3>
+    <div class="tip">
+      库存是<b>状态量</b>（某时刻的快照），销售是<b>流量</b>（一段时间的累计）。为避免多日库存累加导致虚高，<b>库存仅保留最新日期的值</b>（当前：<code>{_latest_date}</code>）。
+    </div>
+    <p>总库存 = 供应商到大仓在途 + 大仓库存 + 大仓到门店在途 + 前置站点库存（4 段汇总）</p>
+  </div>
+
+  <div class="card info">
+    <h3>3. 核心公式</h3>
+    <div class="formula">
+      单日销量 = 商品销售量 ÷ 统计天数（<b>{num_days}</b>天）<br/>
+      预估60天销量 = 单日销量 × 60<br/>
+      周转天数 = 总库存 ÷ 单日销量<br/>
+      单价 = 销售额 ÷ 销售量
+    </div>
+    <p><b>周转天数</b>：数值越小说明库存周转越快（越好），越大说明库存积压越严重。一般阈值参考：≤30 天极健康，30-60 健康，60-180 积压，>180 严重积压。</p>
+  </div>
+
+  <div class="card info">
+    <h3>4. 双编号约定</h3>
+    <p>补货建议、动销差预警、爆品扩城市、库存结构四个看板中商品名格式为：</p>
+    <div class="formula">【文件编号】商品名【顺序编号】</div>
+    <ul>
+      <li><b>文件编号</b>：对应单品 HTML 文件名前缀（按全站销售额降序的原始排名）。看到 <code>【05】</code> 就知道是销售额第 5 名的商品，可直接翻到 <code>05【...】xxx.html</code> 查阅明细。</li>
+      <li><b>顺序编号</b>：当前看板按自身核心指标排序后的位次。</li>
+    </ul>
+  </div>
+
+  <h2 id="f1">① 全部商品汇总_分城市.html</h2>
+  <div class="card">
+    <p><span class="label">地图/排行榜</span>省份 + 城市两级销售地理分布</p>
+    <h3>图表内容</h3>
+    <ul>
+      <li>省份销售额地图（中国地图，颜色深浅=销售额）</li>
+      <li>省份销售额排行榜（横向柱状图）</li>
+      <li>城市销售分布散点地图</li>
+      <li>城市销售额排行榜（横向柱状图）</li>
+    </ul>
+    <h3>用途</h3>
+    <p>快速看全国销售分布、识别主力市场、发现销售薄弱省份城市。</p>
+  </div>
+
+  <h2 id="f2">② 全部商品汇总_分单品.xlsx</h2>
+  <div class="card info">
+    <p><span class="label info">数据表</span>聚合后的原始明细表</p>
+    <h3>包含 Sheet</h3>
+    <ul>
+      <li><b>商品汇总</b>：每个商品的销售额、销售量、预估60天销量、总库存、单价、周转天数</li>
+      <li><b>省份汇总</b>：每个省份的聚合数据</li>
+      <li><b>城市汇总</b>：每个城市的聚合数据</li>
+    </ul>
+    <h3>用途</h3>
+    <p>数据兜底，需要自行在 Excel 中做筛选、透视、二次加工时使用。</p>
+  </div>
+
+  <h2 id="f3">③ 全部商品汇总_分单品.html</h2>
+  <div class="card">
+    <p><span class="label">排行榜</span>所有商品的销售额排行榜</p>
+    <h3>图表内容</h3>
+    <p>横向柱状图（所有商品按销售额降序），5 个指标可切换：总销售额 / 销售量 / 预估60天销量 / 总库存 / 周转天数。</p>
+    <h3>工具按钮</h3>
+    <ul>
+      <li><b>全部不选</b>：清空所有 legend，用于单独勾选某一指标</li>
+      <li><b>重置排名</b>：按当前勾选的指标之和重新排序</li>
+      <li><b>单选模式</b>：点击 legend 时自动只保留被点的指标</li>
+      <li><b>实际数值</b>：默认归一化到相对比例，开启后显示真实数值</li>
+    </ul>
+  </div>
+
+  <h2 id="f4">④ 全部商品汇总_补货建议.html</h2>
+  <div class="card hot">
+    <p><span class="label hot">决策看板</span>缺多少补多少</p>
+    <h3>核心公式</h3>
+    <div class="formula">
+      补货建议 = max(0, 预估60天销量 − 总库存)<br/>
+      库存覆盖率 = 总库存 ÷ 预估60天销量 × 100%
+    </div>
+    <h3>紧急度分档</h3>
+    <table>
+      <tr><th>覆盖率</th><th>分档</th><th>含义</th></tr>
+      <tr><td>&lt;30%</td><td style="color:#e74c3c;"><b>紧急</b></td><td>库存严重不足，立即补货</td></tr>
+      <tr><td>30%-70%</td><td style="color:#f39c12;">建议</td><td>建议近期补货</td></tr>
+      <tr><td>70%-100%</td><td style="color:#f1c40f;">关注</td><td>可延后补货</td></tr>
+      <tr><td>≥100%</td><td style="color:#27ae60;">充足</td><td>库存已覆盖60天，无需补货</td></tr>
+    </table>
+    <p><b>默认开启实际数值模式</b>（补货件数需要具体数字）。排序按补货建议件数降序。</p>
+    <div class="tip">无销售历史（销售量=0）的商品不参与排序，显示在末尾。</div>
+  </div>
+
+  <h2 id="f5">⑤ 全部商品汇总_动销差与库存积压预警.html</h2>
+  <div class="card warn">
+    <p><span class="label warn">预警看板</span>卖不出的都在这里</p>
+    <h3>筛选条件（只显示问题商品）</h3>
+    <ul>
+      <li><b>零动销</b>：销售量 = 0 且 库存 > 0 → 完全卖不动</li>
+      <li><b>动销差</b>：有销售但周转天数 > 60 天 → 卖不完60天库存</li>
+    </ul>
+    <h3>核心公式</h3>
+    <div class="formula">
+      积压件数 = 零动销品: 全部库存<br/>
+                = 有销售品: max(0, 库存 − 预估60天销量)<br/>
+      积压金额 = 积压件数 × 单价（零动销无自身单价时用全局均单价）
+    </div>
+    <h3>状态分档</h3>
+    <table>
+      <tr><th>状态</th><th>判定</th><th>建议</th></tr>
+      <tr><td style="color:#7f8c8d;">零动销</td><td>销量=0, 库存>0</td><td>调拨、促销、退货或淘汰</td></tr>
+      <tr><td style="color:#d35400;">严重积压</td><td>周转天数 > 180天</td><td>降价促销、停止补货</td></tr>
+      <tr><td style="color:#e74c3c;">库存积压</td><td>周转 60-180 天</td><td>控制补货节奏，观察</td></tr>
+    </table>
+    <p>按积压件数降序排序，默认开启实际数值模式。</p>
+  </div>
+
+  <h2 id="f6">⑥ 全部商品汇总_爆品扩城市推荐.html</h2>
+  <div class="card good">
+    <p><span class="label good">机会看板</span>把卖得好的推到没卖的城市去</p>
+    <h3>爆品定义</h3>
+    <ul>
+      <li>销售量 > 0（有销售历史）</li>
+      <li>周转天数 ≤ 60 天（动销健康，不积压）</li>
+    </ul>
+    <h3>核心公式</h3>
+    <div class="formula">
+      全国运营城市集 = 所有商品有销量的城市并集<br/>
+      某爆品缺失城市 = 全国运营城市集 − 该商品已有销量的城市集<br/>
+      单城市均销 = 销售额 ÷ 已覆盖城市数<br/>
+      潜力扩城销售额 = 单城市均销 × 缺失城市数
+    </div>
+    <h3>视图</h3>
+    <ul>
+      <li><b>顶部柱状图</b>：Top30 爆品（按潜力降序），默认只显示"潜力扩城销售额"和"缺失城市数"</li>
+      <li><b>底部卡片列表</b>：每个爆品一张卡片，用橙色标签墙直接列出缺失城市名，可直接抄给业务</li>
+    </ul>
+    <div class="tip">
+      "潜力"是基于"已覆盖城市的平均表现 × 缺失数"的<b>粗估</b>，真实扩城效果还取决于城市消费力、渠道基础等因素。
+    </div>
+  </div>
+
+  <h2 id="f7">⑦ 全部商品汇总_库存结构分析.html</h2>
+  <div class="card info">
+    <p><span class="label info">结构诊断</span>库存在供应链哪一段</p>
+    <h3>四段库存</h3>
+    <table>
+      <tr><th>段位</th><th>含义</th><th>颜色</th></tr>
+      <tr><td>供应商到大仓在途</td><td>供应商已发货，未入大仓</td><td style="color:#3498db;">蓝色</td></tr>
+      <tr><td>大仓库存</td><td>已入大仓，未分拨</td><td style="color:#27ae60;">绿色</td></tr>
+      <tr><td>大仓到门店在途</td><td>已分拨，未到门店</td><td style="color:#f39c12;">橙色</td></tr>
+      <tr><td>前置站点库存</td><td>门店/前置站点可售</td><td style="color:#e74c3c;">红色</td></tr>
+    </table>
+    <h3>异常判定</h3>
+    <ul>
+      <li><b>⚠ 前置空仓</b>：前置站点 = 0 且总库存 > 0 → 货在大仓/在途，卖不到消费者手上</li>
+      <li><b>⚠ 在途滞留</b>：(供应商在途 + 大仓到门店在途) / 总库存 > 50% → 大量库存卡在运输环节</li>
+    </ul>
+    <p>Top30 商品按总库存降序展示，堆叠柱状图直接可见每段占比。</p>
+    <div class="warn-box">
+      <b>典型场景</b>：总库存显示充足但前置空仓 → 分城市看板中该商品仍会出现缺货，需要<b>加速分拨</b>而不是<b>补进货</b>。
+    </div>
+  </div>
+
+  <h2 id="f8">⑧ 全部商品汇总_日销趋势.html</h2>
+  <div class="card">
+    <p><span class="label">时间维度</span>按日期看走势</p>
+    <h3>前提</h3>
+    <p>仅在<b>多日数据</b>（num_days > 1）时生成。单日文件会自动跳过。</p>
+    <h3>图表内容</h3>
+    <ul>
+      <li><b>图1</b>：全国日销售额（左轴）+ 日销售量（右轴），双轴折线 + 面积填充</li>
+      <li><b>图2</b>：Top 10 商品日销售额折线对比（商品名前已加顺序编号）</li>
+    </ul>
+    <h3>KPI</h3>
+    <p>统计天数、日均销售额、最高/最低日及日期、首末日环比（正负带颜色）</p>
+    <div class="tip">图表底部有 datazoom 滑块，可缩放查看特定日期范围。</div>
+  </div>
+
+  <h2 id="f9">⑨ 全部商品汇总_城市健康度.html</h2>
+  <div class="card good">
+    <p><span class="label good">综合评分</span>城市运营质量打分</p>
+    <h3>四维度加权评分</h3>
+    <table>
+      <tr><th>维度</th><th>公式</th><th>权重</th></tr>
+      <tr><td>SKU 覆盖率</td><td>城市 SKU 数 ÷ 全国 SKU 总数</td><td>30%</td></tr>
+      <tr><td>销售规模</td><td>log(销售额+1) ÷ log(最大销售额+1)</td><td>25%</td></tr>
+      <tr><td>单价水平</td><td>城市均单价 ÷ 最大均单价</td><td>15%</td></tr>
+      <tr><td>周转健康度</td><td>30天=满分，180天=0分 线性递减</td><td>30%</td></tr>
+    </table>
+    <p>各维度归一化到 0-100 分后加权，总分 0-100。</p>
+    <h3>分级（柱状图自动染色）</h3>
+    <table>
+      <tr><th>分段</th><th>分级</th><th>颜色</th></tr>
+      <tr><td>≥80</td><td><b>标杆</b></td><td style="color:#27ae60;">绿色</td></tr>
+      <tr><td>60-80</td><td>健康</td><td style="color:#2c7be5;">蓝色</td></tr>
+      <tr><td>40-60</td><td>待改善</td><td style="color:#f39c12;">橙色</td></tr>
+      <tr><td>&lt;40</td><td>问题</td><td style="color:#e74c3c;">红色</td></tr>
+    </table>
+    <div class="tip">销售规模用<b>对数</b>而非线性，避免一线城市拉爆所有维度；权重侧重"面"（SKU 覆盖 30% + 周转 30%）而非"量"（销售规模 25%）。</div>
+  </div>
+
+  <h2 id="single">⑩ 单品明细页 XX【...】商品名.html</h2>
+  <div class="card">
+    <p><span class="label">单品钻取</span>每个商品一张页</p>
+    <h3>文件名含义</h3>
+    <div class="formula">
+      XX【销售额 销售量 总库存 单价 周转天数】商品名.html
+    </div>
+    <p>XX 是销售额降序的排名（00 是全部商品汇总，01 是第一名）。数字部分是简写（w=万，k=千）。</p>
+    <h3>页面内容</h3>
+    <ul>
+      <li>顶部 KPI：全国总销售额/销售量/库存/均单价/周转天数</li>
+      <li>省份销售额地图</li>
+      <li>省份销售额排行榜（可切换销量/库存/周转等 5 指标）</li>
+      <li>城市销售分布散点地图</li>
+      <li>城市销售额排行榜（5 指标切换）</li>
+    </ul>
+    <p>从补货建议/动销差预警等看板看到 <code>【05】</code> 时，对应 <code>05【...】商品名.html</code> 查钻明细。</p>
+  </div>
+
+  <h2 id="tips">💡 使用建议</h2>
+
+  <div class="card good">
+    <h3>每日/每周例行检查流程</h3>
+    <ol>
+      <li><b>先看问题</b>：打开 <code>⑤动销差预警</code> → 锁定要清仓/调拨的积压品</li>
+      <li><b>再看机会</b>：打开 <code>④补货建议</code> → 紧急档商品立即补货；打开 <code>⑥爆品扩城市</code> → 给业务下发扩城清单</li>
+      <li><b>结构诊断</b>：打开 <code>⑦库存结构</code> → 检查是否有"货在大仓卖不到门店"的结构问题</li>
+      <li><b>城市层面</b>：打开 <code>⑨城市健康度</code> → 抓问题城市（&lt;40分）重点运营</li>
+      <li><b>趋势观察</b>：打开 <code>⑧日销趋势</code> → 看整体走势是否健康</li>
+    </ol>
+  </div>
+
+  <div class="card warn">
+    <h3>常见误读避免</h3>
+    <ul>
+      <li><b>周转天数虚高</b>：当单日销量极小时（比如 0.1 件/天），周转会被算得极大（几千天）。这种情况请结合"总库存件数"判断是否真积压。</li>
+      <li><b>新品问题</b>：新上架商品销售历史短，预估60天销量可能低估或高估。参考时需结合自身业务判断。</li>
+      <li><b>补货建议的前提是未来60天销量 ≈ 历史日销 × 60</b>。季节性商品、促销商品、新品需人工调整。</li>
+      <li><b>爆品扩城潜力是上界粗估</b>，真实扩城效果取决于当地消费力、渠道、物流等多重因素，是决策参考而非承诺值。</li>
+    </ul>
+  </div>
+
+  <div class="card info">
+    <h3>颜色编码约定</h3>
+    <ul>
+      <li>🟢 绿色：健康 / 达标 / 正面</li>
+      <li>🔵 蓝色：主要指标 / 中性</li>
+      <li>🟡 黄色 / 🟠 橙色：关注 / 警告</li>
+      <li>🔴 红色：紧急 / 异常 / 核心指标（补货件数/积压件数）</li>
+      <li>🟣 紫色：特殊维度（库存结构 / 最高分标记等）</li>
+    </ul>
+  </div>
+
+  <div class="meta" style="margin-top:40px;text-align:center;border-top:1px solid #eee;padding-top:20px;">
+    本说明文档自动生成 · 如对某个计算规则有异议可反馈调整
+  </div>
+</div>
+</body>
+</html>
+"""
+                with open(readme_output, "w", encoding="utf-8") as f:
+                    f.write(readme_html)
+                print(f"已生成：{readme_output}")
+            except Exception as _e:
+                print(f"看板说明文档生成失败：{_e}")
 
 
 # ── 批量处理 02 生成\02 表 目录 ──────────────────────────
