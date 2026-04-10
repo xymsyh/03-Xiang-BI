@@ -5,7 +5,7 @@ import re
 
 import pandas as pd
 from pyecharts import options as opts
-from pyecharts.charts import Bar, Geo, Map, Page
+from pyecharts.charts import Bar, Geo, Line, Map, Page
 from pyecharts.commons.utils import JsCode
 from pyecharts.globals import ThemeType
 
@@ -1477,6 +1477,526 @@ def process_file(file_path, output_dir):
                 with open(expand_output, "w", encoding="utf-8") as f:
                     f.write(exp_html)
                 print(f"已生成：{expand_output}")
+
+            # ── 为汇总（编号 00）生成库存结构分布 BI 看板 ──────────
+            try:
+                structure_filename = filename.replace("_分城市.html", "_库存结构分析.html")
+                structure_output = os.path.join(output_product_dir, structure_filename)
+
+                _latest_date_s = df["日期"].astype(str).str.strip().max()
+                _df_latest = df[(df["日期"].astype(str).str.strip() == _latest_date_s) &
+                                (df["城市_清洗"] != "全国")].copy()
+                for _c in ["供应商到大仓在途数量", "大仓库存数量", "大仓到门店在途数量", "前置站点库存数量"]:
+                    _df_latest[_c] = pd.to_numeric(_df_latest[_c], errors="coerce").fillna(0)
+
+                _df_stock_struct = _df_latest.groupby("商品名称").agg(
+                    供应商在途=("供应商到大仓在途数量", "sum"),
+                    大仓库存=("大仓库存数量", "sum"),
+                    大仓到门店在途=("大仓到门店在途数量", "sum"),
+                    前置站点=("前置站点库存数量", "sum"),
+                ).reset_index()
+                _df_stock_struct["总库存"] = (_df_stock_struct["供应商在途"] +
+                                              _df_stock_struct["大仓库存"] +
+                                              _df_stock_struct["大仓到门店在途"] +
+                                              _df_stock_struct["前置站点"])
+
+                # 映射 orig_idx
+                _name_to_idx = {pg["name"]: _i for _i, pg in enumerate(product_groups[1:], 1)}
+
+                _struct_items = []
+                for _, row in _df_stock_struct.iterrows():
+                    if row["总库存"] <= 0:
+                        continue
+                    _n = row["商品名称"]
+                    _oi = _name_to_idx.get(_n, 0)
+                    _supplier = int(row["供应商在途"])
+                    _warehouse = int(row["大仓库存"])
+                    _transit = int(row["大仓到门店在途"])
+                    _frontier = int(row["前置站点"])
+                    _total = int(row["总库存"])
+                    _is_empty_frontier = (_frontier == 0 and _total > 0)
+                    _transit_ratio = (_supplier + _transit) / _total if _total else 0
+                    _is_stuck = (_transit_ratio > 0.5)
+                    _tags = []
+                    if _is_empty_frontier:
+                        _tags.append("⚠前置空仓")
+                    if _is_stuck:
+                        _tags.append("⚠在途滞留")
+                    _struct_items.append({
+                        "orig_idx": _oi,
+                        "name": _n,
+                        "supplier": _supplier,
+                        "warehouse": _warehouse,
+                        "transit": _transit,
+                        "frontier": _frontier,
+                        "total": _total,
+                        "frontier_ratio": round(_frontier / _total * 100, 1) if _total else 0,
+                        "transit_ratio": round(_transit_ratio * 100, 1),
+                        "tags": "/".join(_tags) if _tags else "健康",
+                    })
+
+                _struct_items.sort(key=lambda x: x["total"], reverse=True)
+                _struct_items = _struct_items[:30]
+
+                if len(_struct_items) == 0:
+                    print(f"跳过：无库存数据，未生成 {structure_output}")
+                else:
+                    for _oi, it in enumerate(_struct_items, 1):
+                        it["label"] = f"【{it['orig_idx']:02d}】{it['name']}【{_oi:02d}】"
+
+                    _struct_names = [it["label"] for it in _struct_items]
+                    _struct_tooltip = {}
+                    for it in _struct_items:
+                        _struct_tooltip[it["label"]] = {
+                            "供应商在途": it["supplier"],
+                            "大仓库存": it["warehouse"],
+                            "大仓到门店在途": it["transit"],
+                            "前置站点": it["frontier"],
+                            "总库存": it["total"],
+                            "前置占比": it["frontier_ratio"],
+                            "在途占比": it["transit_ratio"],
+                            "状态": it["tags"],
+                        }
+
+                    _empty_frontier_count = sum(1 for it in _struct_items if it["frontier"] == 0)
+                    _stuck_count = sum(1 for it in _struct_items if it["transit_ratio"] > 50)
+                    _healthy_count = sum(1 for it in _struct_items if it["tags"] == "健康")
+                    _total_all = sum(it["total"] for it in _struct_items)
+                    _avg_supplier = sum(it["supplier"] for it in _struct_items) / _total_all * 100 if _total_all else 0
+                    _avg_warehouse = sum(it["warehouse"] for it in _struct_items) / _total_all * 100 if _total_all else 0
+                    _avg_transit = sum(it["transit"] for it in _struct_items) / _total_all * 100 if _total_all else 0
+                    _avg_frontier = sum(it["frontier"] for it in _struct_items) / _total_all * 100 if _total_all else 0
+
+                    _struct_h = f"{max(600, len(_struct_names) * 36 + 80)}px"
+                    chart_struct_bar = (
+                        Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_struct_h))
+                        .add_xaxis(_struct_names[::-1])
+                        .add_yaxis("供应商在途", [it["supplier"] for it in _struct_items][::-1],
+                                   stack="stock", itemstyle_opts=opts.ItemStyleOpts(color="#3498db"))
+                        .add_yaxis("大仓库存", [it["warehouse"] for it in _struct_items][::-1],
+                                   stack="stock", itemstyle_opts=opts.ItemStyleOpts(color="#27ae60"))
+                        .add_yaxis("大仓到门店在途", [it["transit"] for it in _struct_items][::-1],
+                                   stack="stock", itemstyle_opts=opts.ItemStyleOpts(color="#f39c12"))
+                        .add_yaxis("前置站点", [it["frontier"] for it in _struct_items][::-1],
+                                   stack="stock", itemstyle_opts=opts.ItemStyleOpts(color="#e74c3c"))
+                        .reversal_axis()
+                        .set_series_opts(label_opts=opts.LabelOpts(is_show=False))
+                        .set_global_opts(
+                            title_opts=opts.TitleOpts(title="库存结构分布（四段堆叠）"),
+                            xaxis_opts=opts.AxisOpts(name="库存件数"),
+                            legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center"),
+                            tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
+                                "function(ps){var p=ps[0],d=STRUCT_DATA[p.name]||{};"
+                                "return p.name"
+                                "+'<br/>总库存: '+(d.总库存!=null?d.总库存+' 件':'-')"
+                                "+'<br/>供应商在途: '+(d.供应商在途!=null?d.供应商在途+' 件':'-')"
+                                "+'<br/>大仓库存: '+(d.大仓库存!=null?d.大仓库存+' 件':'-')"
+                                "+'<br/>大仓到门店在途: '+(d.大仓到门店在途!=null?d.大仓到门店在途+' 件':'-')"
+                                "+'<br/>前置站点: '+(d.前置站点!=null?d.前置站点+' 件':'-')"
+                                "+'<br/>前置占比: '+(d.前置占比!=null?d.前置占比+' %':'-')"
+                                "+'<br/>在途占比: '+(d.在途占比!=null?d.在途占比+' %':'-')"
+                                "+'<br/><b>状态: '+(d.状态!=null?d.状态:'-')+'</b>';}"
+                            )),
+                        )
+                    )
+
+                    struct_page = Page(layout=Page.SimplePageLayout)
+                    struct_page.add(chart_struct_bar)
+                    struct_page.render(structure_output)
+
+                    struct_js_data = (
+                        "<script>\n"
+                        f"var STRUCT_DATA={json.dumps(_struct_tooltip, ensure_ascii=False)};\n"
+                        "</script>"
+                    )
+
+                    struct_kpi_html = f"""
+<div style="font-family:'Microsoft YaHei',sans-serif;background:#f3f0ff;padding:14px 24px 12px;border-bottom:2px solid #d8d0f0;margin-bottom:4px;">
+  <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap;">
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(142,68,173,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">前置站点空仓</div>
+      <div style="color:#e74c3c;font-size:26px;font-weight:bold;">{_empty_frontier_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">个商品前置=0</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(142,68,173,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">在途滞留商品</div>
+      <div style="color:#f39c12;font-size:26px;font-weight:bold;">{_stuck_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">在途占比&gt;50%</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(142,68,173,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">结构健康商品</div>
+      <div style="color:#27ae60;font-size:26px;font-weight:bold;">{_healthy_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">个</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(142,68,173,0.12);text-align:center;min-width:180px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">四段平均占比</div>
+      <div style="color:#555;font-size:14px;font-weight:bold;line-height:1.5;">
+        <span style="color:#3498db;">供应商 {_avg_supplier:.1f}%</span> /
+        <span style="color:#27ae60;">大仓 {_avg_warehouse:.1f}%</span><br/>
+        <span style="color:#f39c12;">在途 {_avg_transit:.1f}%</span> /
+        <span style="color:#e74c3c;">前置 {_avg_frontier:.1f}%</span>
+      </div>
+    </div>
+  </div>
+</div>
+"""
+
+                    struct_toolbar_js = replenish_toolbar_js.replace(
+                        "var names=['预估60天销量','总库存','补货建议'];",
+                        "var names=['供应商在途','大仓库存','大仓到门店在途','前置站点'];"
+                    ).replace(
+                        "// 默认开启【实际数值】\n        btn4.onclick();",
+                        "// 堆叠柱状本身就是实际数值"
+                    )
+
+                    with open(structure_output, "r", encoding="utf-8") as f:
+                        struct_html = f.read()
+                    struct_html = struct_html.replace("</head>", struct_js_data + "\n</head>", 1)
+                    struct_html = re.sub(r"(<body[^>]*>)", r"\1\n" + kpi_html + struct_kpi_html, struct_html, count=1)
+                    struct_html = struct_html.replace("</body>", struct_toolbar_js + "\n</body>", 1)
+                    with open(structure_output, "w", encoding="utf-8") as f:
+                        f.write(struct_html)
+                    print(f"已生成：{structure_output}")
+            except Exception as _e:
+                print(f"库存结构看板生成失败：{_e}")
+
+            # ── 为汇总（编号 00）生成日销趋势 BI 看板 ──────────────
+            try:
+                if num_days <= 1:
+                    print(f"跳过：单日数据无趋势，未生成日销趋势看板")
+                else:
+                    trend_filename = filename.replace("_分城市.html", "_日销趋势.html")
+                    trend_output = os.path.join(output_product_dir, trend_filename)
+
+                    _df_trend_base = df[df["城市_清洗"] != "全国"].copy()
+                    _df_trend_base["日期_str"] = _df_trend_base["日期"].astype(str).str.strip()
+                    _df_trend_all = _df_trend_base.groupby("日期_str").agg(
+                        总销售额=("商品销售额", "sum"),
+                        总销售量=("商品销售量", "sum"),
+                    ).reset_index().sort_values("日期_str")
+
+                    def _fmt_date(s):
+                        s = str(s).strip()
+                        if len(s) == 8 and s.isdigit():
+                            return f"{s[4:6]}/{s[6:8]}"
+                        return s
+
+                    _trend_dates = [_fmt_date(d) for d in _df_trend_all["日期_str"].tolist()]
+                    _trend_sales = [round(float(v), 2) for v in _df_trend_all["总销售额"].tolist()]
+                    _trend_qty = [int(v) for v in _df_trend_all["总销售量"].tolist()]
+
+                    chart_trend_all = (
+                        Line(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height="450px"))
+                        .add_xaxis(_trend_dates)
+                        .add_yaxis("日销售额(元)", _trend_sales, yaxis_index=0,
+                                   is_smooth=True,
+                                   areastyle_opts=opts.AreaStyleOpts(opacity=0.3),
+                                   itemstyle_opts=opts.ItemStyleOpts(color="#2c7be5"))
+                        .add_yaxis("日销售量(件)", _trend_qty, yaxis_index=1,
+                                   is_smooth=True,
+                                   itemstyle_opts=opts.ItemStyleOpts(color="#27ae60"))
+                        .extend_axis(yaxis=opts.AxisOpts(name="销售量(件)", position="right"))
+                        .set_global_opts(
+                            title_opts=opts.TitleOpts(title="全国日销趋势"),
+                            xaxis_opts=opts.AxisOpts(name="日期", type_="category"),
+                            yaxis_opts=opts.AxisOpts(name="销售额(元)", position="left"),
+                            tooltip_opts=opts.TooltipOpts(trigger="axis"),
+                            legend_opts=opts.LegendOpts(pos_top="40px"),
+                            datazoom_opts=[opts.DataZoomOpts(type_="inside"), opts.DataZoomOpts(type_="slider")],
+                        )
+                    )
+
+                    # Top 10 商品日销
+                    _top10_pgs = product_groups[1:11]
+                    chart_trend_top = (
+                        Line(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height="500px"))
+                        .add_xaxis(_trend_dates)
+                    )
+                    for _pi, pg in enumerate(_top10_pgs, 1):
+                        _pg_df = pg["df"][pg["df"]["城市_清洗"] != "全国"].copy()
+                        _pg_df["日期_str"] = _pg_df["日期"].astype(str).str.strip()
+                        _pg_trend_map = _pg_df.groupby("日期_str")["商品销售额"].sum().to_dict()
+                        _pg_trend_values = [round(float(_pg_trend_map.get(d, 0)), 2)
+                                            for d in _df_trend_all["日期_str"].tolist()]
+                        _short_name = pg["name"][:18] + ("..." if len(pg["name"]) > 18 else "")
+                        chart_trend_top.add_yaxis(f"【{_pi:02d}】{_short_name}", _pg_trend_values,
+                                                  is_smooth=True, symbol_size=6,
+                                                  label_opts=opts.LabelOpts(is_show=False))
+                    chart_trend_top.set_global_opts(
+                        title_opts=opts.TitleOpts(title="Top 10 商品日销售额趋势对比"),
+                        xaxis_opts=opts.AxisOpts(name="日期", type_="category"),
+                        yaxis_opts=opts.AxisOpts(name="销售额(元)"),
+                        tooltip_opts=opts.TooltipOpts(trigger="axis"),
+                        legend_opts=opts.LegendOpts(pos_top="40px", type_="scroll"),
+                        datazoom_opts=[opts.DataZoomOpts(type_="inside"), opts.DataZoomOpts(type_="slider")],
+                    )
+
+                    trend_page = Page(layout=Page.SimplePageLayout)
+                    trend_page.add(chart_trend_all, chart_trend_top)
+                    trend_page.render(trend_output)
+
+                    # KPI
+                    _trend_total_days = len(_trend_dates)
+                    _trend_avg_sales = sum(_trend_sales) / _trend_total_days if _trend_total_days else 0
+                    _trend_max_idx = _trend_sales.index(max(_trend_sales)) if _trend_sales else 0
+                    _trend_min_idx = _trend_sales.index(min(_trend_sales)) if _trend_sales else 0
+                    _trend_max_date = _trend_dates[_trend_max_idx] if _trend_dates else "-"
+                    _trend_min_date = _trend_dates[_trend_min_idx] if _trend_dates else "-"
+                    _trend_max_val = max(_trend_sales) if _trend_sales else 0
+                    _trend_min_val = min(_trend_sales) if _trend_sales else 0
+                    if len(_trend_sales) >= 2 and _trend_sales[0] > 0:
+                        _trend_growth = (_trend_sales[-1] - _trend_sales[0]) / _trend_sales[0] * 100
+                        _trend_growth_str = f"{_trend_growth:+.1f}%"
+                        _trend_growth_color = "#27ae60" if _trend_growth >= 0 else "#e74c3c"
+                    else:
+                        _trend_growth_str = "-"
+                        _trend_growth_color = "#888"
+
+                    trend_kpi_html = f"""
+<div style="font-family:'Microsoft YaHei',sans-serif;background:#fffcf0;padding:14px 24px 12px;border-bottom:2px solid #f0e8c0;margin-bottom:4px;">
+  <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap;">
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(241,196,15,0.15);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">统计天数</div>
+      <div style="color:#f39c12;font-size:26px;font-weight:bold;">{_trend_total_days}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">天</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(241,196,15,0.15);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">日均销售额</div>
+      <div style="color:#2c7be5;font-size:26px;font-weight:bold;">¥ {_trend_avg_sales:,.0f}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">元/天</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(241,196,15,0.15);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">最高日</div>
+      <div style="color:#27ae60;font-size:20px;font-weight:bold;">¥ {_trend_max_val:,.0f}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">{_trend_max_date}</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(241,196,15,0.15);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">最低日</div>
+      <div style="color:#e67e22;font-size:20px;font-weight:bold;">¥ {_trend_min_val:,.0f}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">{_trend_min_date}</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(241,196,15,0.15);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">首末日环比</div>
+      <div style="color:{_trend_growth_color};font-size:26px;font-weight:bold;">{_trend_growth_str}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">末日 vs 首日</div>
+    </div>
+  </div>
+</div>
+"""
+
+                    with open(trend_output, "r", encoding="utf-8") as f:
+                        trend_html = f.read()
+                    trend_html = re.sub(r"(<body[^>]*>)", r"\1\n" + kpi_html + trend_kpi_html, trend_html, count=1)
+                    with open(trend_output, "w", encoding="utf-8") as f:
+                        f.write(trend_html)
+                    print(f"已生成：{trend_output}")
+            except Exception as _e:
+                print(f"日销趋势看板生成失败：{_e}")
+
+            # ── 为汇总（编号 00）生成城市销售健康度评分 BI 看板 ──────
+            try:
+                health_filename = filename.replace("_分城市.html", "_城市健康度.html")
+                health_output = os.path.join(output_product_dir, health_filename)
+
+                # 全国 SKU 总数
+                _global_sku_count = df[df["城市_清洗"] != "全国"]["商品名称"].nunique()
+
+                # 按城市聚合
+                _df_city_base = df[df["城市_清洗"] != "全国"].copy()
+                _df_city_latest = _df_city_base[_df_city_base["日期"].astype(str).str.strip() == _latest_date_s]
+                _city_stock_map = _df_city_latest.groupby("城市_清洗").apply(
+                    lambda g: (pd.to_numeric(g["供应商到大仓在途数量"], errors="coerce").fillna(0).sum() +
+                               pd.to_numeric(g["大仓库存数量"], errors="coerce").fillna(0).sum() +
+                               pd.to_numeric(g["大仓到门店在途数量"], errors="coerce").fillna(0).sum() +
+                               pd.to_numeric(g["前置站点库存数量"], errors="coerce").fillna(0).sum())
+                ).to_dict()
+
+                _city_agg = _df_city_base.groupby("城市_清洗").agg(
+                    城市销售额=("商品销售额", "sum"),
+                    城市销售量=("商品销售量", "sum"),
+                    SKU数=("商品名称", "nunique"),
+                ).reset_index()
+
+                _city_agg["城市总库存"] = _city_agg["城市_清洗"].map(_city_stock_map).fillna(0)
+                _city_agg["均单价"] = _city_agg["城市销售额"] / _city_agg["城市销售量"].replace(0, float("nan"))
+                _city_agg["单日销量"] = _city_agg["城市销售量"] / num_days
+                _city_agg["周转天数"] = _city_agg["城市总库存"] / _city_agg["单日销量"].replace(0, float("nan"))
+
+                import math as _math
+                _max_sales = float(_city_agg["城市销售额"].max()) if len(_city_agg) else 1
+                _max_price = float(_city_agg["均单价"].max()) if len(_city_agg) else 1
+
+                _health_items = []
+                for _, row in _city_agg.iterrows():
+                    _city = row["城市_清洗"]
+                    _sales = float(row["城市销售额"])
+                    _qty = int(row["城市销售量"])
+                    _sku = int(row["SKU数"])
+                    _price = float(row["均单价"]) if pd.notna(row["均单价"]) else 0
+                    _turn = float(row["周转天数"]) if pd.notna(row["周转天数"]) else None
+
+                    _sku_score = _sku / _global_sku_count * 100 if _global_sku_count else 0
+                    _sales_score = (_math.log(_sales + 1) / _math.log(_max_sales + 1) * 100) if _max_sales > 0 else 0
+                    _price_score = (_price / _max_price * 100) if _max_price > 0 else 0
+                    if _turn is None:
+                        _turn_score = 0
+                    else:
+                        _turn_score = max(0.0, min(100.0, (1 - (_turn - 30) / 150) * 100))
+                    _total_score = round(_sku_score * 0.30 + _sales_score * 0.25 +
+                                         _price_score * 0.15 + _turn_score * 0.30, 1)
+
+                    if _total_score >= 80:
+                        _level = "标杆"
+                    elif _total_score >= 60:
+                        _level = "健康"
+                    elif _total_score >= 40:
+                        _level = "待改善"
+                    else:
+                        _level = "问题"
+
+                    _health_items.append({
+                        "city": _city,
+                        "sales": round(_sales, 2),
+                        "qty": _qty,
+                        "sku": _sku,
+                        "price": round(_price, 2),
+                        "turnover": round(_turn, 1) if _turn is not None else None,
+                        "sku_score": round(_sku_score, 1),
+                        "sales_score": round(_sales_score, 1),
+                        "price_score": round(_price_score, 1),
+                        "turn_score": round(_turn_score, 1),
+                        "total_score": _total_score,
+                        "level": _level,
+                    })
+
+                _health_items.sort(key=lambda x: x["total_score"], reverse=True)
+
+                if len(_health_items) == 0:
+                    print(f"跳过：无城市数据，未生成 {health_output}")
+                else:
+                    _health_labels = [f"{it['city']}（{it['level']}）" for it in _health_items]
+                    _health_tooltip = {}
+                    for i, it in enumerate(_health_items):
+                        _health_tooltip[_health_labels[i]] = {
+                            "销售额": it["sales"],
+                            "销售量": it["qty"],
+                            "SKU数": it["sku"],
+                            "均单价": it["price"],
+                            "周转天数": it["turnover"],
+                            "SKU覆盖分": it["sku_score"],
+                            "销售规模分": it["sales_score"],
+                            "单价水平分": it["price_score"],
+                            "周转健康分": it["turn_score"],
+                            "总分": it["total_score"],
+                            "分级": it["level"],
+                        }
+
+                    _benchmark_count = sum(1 for it in _health_items if it["total_score"] >= 80)
+                    _problem_count = sum(1 for it in _health_items if it["total_score"] < 40)
+                    _avg_health = sum(it["total_score"] for it in _health_items) / len(_health_items)
+                    _top_city = _health_items[0]
+
+                    _health_h = f"{max(600, len(_health_labels) * 28 + 80)}px"
+                    chart_health_bar = (
+                        Bar(init_opts=opts.InitOpts(theme=ThemeType.MACARONS, width="100%", height=_health_h))
+                        .add_xaxis(_health_labels[::-1])
+                        .add_yaxis("总分", [it["total_score"] for it in _health_items][::-1],
+                                   label_opts=opts.LabelOpts(position="right"),
+                                   itemstyle_opts=opts.ItemStyleOpts(color=JsCode(
+                                       "function(p){var v=p.value;"
+                                       "if(v>=80)return '#27ae60';"
+                                       "if(v>=60)return '#2c7be5';"
+                                       "if(v>=40)return '#f39c12';"
+                                       "return '#e74c3c';}"
+                                   )))
+                        .add_yaxis("SKU覆盖分", [it["sku_score"] for it in _health_items][::-1],
+                                   label_opts=opts.LabelOpts(position="right"))
+                        .add_yaxis("销售规模分", [it["sales_score"] for it in _health_items][::-1],
+                                   label_opts=opts.LabelOpts(position="right"))
+                        .add_yaxis("单价水平分", [it["price_score"] for it in _health_items][::-1],
+                                   label_opts=opts.LabelOpts(position="right"))
+                        .add_yaxis("周转健康分", [it["turn_score"] for it in _health_items][::-1],
+                                   label_opts=opts.LabelOpts(position="right"))
+                        .reversal_axis()
+                        .set_global_opts(
+                            title_opts=opts.TitleOpts(title="城市销售健康度评分（权重 SKU30%+销售25%+单价15%+周转30%）"),
+                            xaxis_opts=opts.AxisOpts(name="分数", max_=100),
+                            legend_opts=opts.LegendOpts(pos_top="40px", pos_left="center",
+                                selected_map={"总分": True, "SKU覆盖分": False, "销售规模分": False,
+                                              "单价水平分": False, "周转健康分": False}),
+                            tooltip_opts=opts.TooltipOpts(trigger="axis", formatter=JsCode(
+                                "function(ps){var p=ps[0],d=HEALTH_DATA[p.name]||{};"
+                                "return p.name"
+                                "+'<br/><b>总分: '+(d.总分!=null?d.总分:'-')+' ('+(d.分级!=null?d.分级:'-')+')</b>'"
+                                "+'<br/>销售额: '+(d.销售额!=null?'¥'+d.销售额+' 元':'-')"
+                                "+'<br/>销售量: '+(d.销售量!=null?d.销售量+' 件':'-')"
+                                "+'<br/>SKU数: '+(d.SKU数!=null?d.SKU数+' 个':'-')"
+                                "+'<br/>均单价: '+(d.均单价!=null?'¥'+d.均单价:'-')"
+                                "+'<br/>周转天数: '+(d.周转天数!=null?d.周转天数+' 天':'-')"
+                                "+'<br/>—— 分项 ——'"
+                                "+'<br/>SKU覆盖分: '+(d.SKU覆盖分!=null?d.SKU覆盖分:'-')"
+                                "+'<br/>销售规模分: '+(d.销售规模分!=null?d.销售规模分:'-')"
+                                "+'<br/>单价水平分: '+(d.单价水平分!=null?d.单价水平分:'-')"
+                                "+'<br/>周转健康分: '+(d.周转健康分!=null?d.周转健康分:'-');}"
+                            )),
+                        )
+                    )
+
+                    health_page = Page(layout=Page.SimplePageLayout)
+                    health_page.add(chart_health_bar)
+                    health_page.render(health_output)
+
+                    health_js_data = (
+                        "<script>\n"
+                        f"var HEALTH_DATA={json.dumps(_health_tooltip, ensure_ascii=False)};\n"
+                        "</script>"
+                    )
+
+                    health_kpi_html = f"""
+<div style="font-family:'Microsoft YaHei',sans-serif;background:#e8f4fd;padding:14px 24px 12px;border-bottom:2px solid #b8d9f0;margin-bottom:4px;">
+  <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap;">
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(44,123,229,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">标杆城市数</div>
+      <div style="color:#27ae60;font-size:26px;font-weight:bold;">{_benchmark_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">总分≥80</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(44,123,229,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">问题城市数</div>
+      <div style="color:#e74c3c;font-size:26px;font-weight:bold;">{_problem_count}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">总分&lt;40</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(44,123,229,0.12);text-align:center;min-width:150px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">平均健康度</div>
+      <div style="color:#2c7be5;font-size:26px;font-weight:bold;">{_avg_health:.1f}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">分</div>
+    </div>
+    <div style="background:#fff;border-radius:12px;padding:14px 26px;box-shadow:0 2px 12px rgba(44,123,229,0.12);text-align:center;min-width:180px;">
+      <div style="color:#888;font-size:12px;letter-spacing:1px;margin-bottom:6px;">最高分城市</div>
+      <div style="color:#8e44ad;font-size:20px;font-weight:bold;">{_top_city['city']}</div>
+      <div style="color:#bbb;font-size:11px;margin-top:3px;">{_top_city['total_score']} 分 · {_top_city['level']}</div>
+    </div>
+  </div>
+</div>
+"""
+
+                    health_toolbar_js = replenish_toolbar_js.replace(
+                        "var names=['预估60天销量','总库存','补货建议'];",
+                        "var names=['总分','SKU覆盖分','销售规模分','单价水平分','周转健康分'];"
+                    ).replace(
+                        "// 默认开启【实际数值】\n        btn4.onclick();",
+                        "// 评分为0-100分，保持归一化默认"
+                    )
+
+                    with open(health_output, "r", encoding="utf-8") as f:
+                        health_html = f.read()
+                    health_html = health_html.replace("</head>", health_js_data + "\n</head>", 1)
+                    health_html = re.sub(r"(<body[^>]*>)", r"\1\n" + kpi_html + health_kpi_html, health_html, count=1)
+                    health_html = health_html.replace("</body>", health_toolbar_js + "\n</body>", 1)
+                    with open(health_output, "w", encoding="utf-8") as f:
+                        f.write(health_html)
+                    print(f"已生成：{health_output}")
+            except Exception as _e:
+                print(f"城市健康度看板生成失败：{_e}")
 
 
 # ── 批量处理 02 生成\02 表 目录 ──────────────────────────
